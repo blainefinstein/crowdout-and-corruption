@@ -4,6 +4,7 @@ library(tidyverse)
 library(TAF)
 library(NLP)
 library(stringr)
+library(pdftools)
 
 ######################################################
 #### Helper functions and variable initialization ####
@@ -149,7 +150,7 @@ find_funds <- function(df) {
 }
 
 # return df of budget items in data + corresponding amounts
-extract <- function(df) {
+extract_.xlsx <- function(df) {
   # Initialize an empty data frame to store the results
   res <- data.frame(matrix(ncol = 0, nrow = 1))
   
@@ -272,15 +273,59 @@ clean_excel <- function(path) {
   # Loop over sheets and build observation out of budget report
   if(annex) {
     for (i in 1:length(sheets)) {
-      res <- cbind(res, sheets[[i]] |> find_funds() |> extract())
+      res <- cbind(res, sheets[[i]] |> find_funds() |> extract.xlsx())
     }
   } else {
     for (i in 1:length(sheets)) {
-      res <- cbind(res, sheets[[i]] |> find_year(2022) |> extract())
+      res <- cbind(res, sheets[[i]] |> find_year(2022) |> extract.xlsx())
     }
   }
   
   return(res)
+}
+
+## PDF helper functions
+
+# read PDF
+read_.pdf <- function(path) {
+  # Read each page of PDf into list
+  pages <- pdf_text(path)
+  
+  # Put all text from list into one string
+  text <- ""
+  for(i in 1:length(pages)) {
+    text <- paste(text, pages[i])
+  }
+  
+  # Clean text
+  text <- gsub("\n", " ", text)
+  text <- gsub("[()]", "", text)
+  text <- gsub("\\s+", " ", text)
+  text <- trimws(text)
+  
+  return(text)
+}
+
+# return df of budget items in text + corresponding amounts
+extract_.pdf <- function(text, pattern) {
+  # Initialize an empty data frame to store the results
+  res <- data.frame(matrix(ncol = 0, nrow = 1))
+  
+  # Create a regular expression to match the pattern followed by any number of spaces or 'p',
+  # and then a number with commas and at least three digits, optionally surrounded by parentheses
+  regex <- paste0("(?<=", pattern, ")[\\s,\\-p]*\\(?([\\d,\\s-]{3,}\\.?\\d*)(?=\\D|\\)\\D|\\)$)")
+  
+  # Use str_match to find the match and extract the number
+  match <- str_match(text, regex)
+  
+  # The result will be a matrix; we need the second column for the matched group
+  if (!is.na(match[1, 2])) {
+    # Remove commas and parentheses, then convert to numeric
+    number <- gsub("[,()\\s]", "", match[1, 2])
+    return(as.numeric(number))
+  } else {
+    return(NA)  # Return NA if no match is found
+  }
 }
 
 # Add one budget to df 
@@ -327,9 +372,12 @@ pattern <- paste(audit_lang, collapse="|")
 #### Run code ####
 ##################
 
+# Set directory from which to make budget data
+directory <- "/Budgets/2022/NCR"
+
 # Get unzipped directories (every other file)
-places <- list.files(paste0(getwd(), "/Budgets/2022/NCR")) |> 
-  map(\(x) paste0("Budgets/2022/NCR/", x))
+places <- list.files(paste0(getwd(), directory)) |> 
+  map(\(x) paste0(directory, x))
 places <- places[seq_along(places) %% 2 != 0]
 
 # Map over unzipped directories to get budget report file paths
@@ -348,6 +396,10 @@ for (i in 3:nrow(paths)) {
   # If excel doc, run code to clean Excel docs
   if(grepl(".xlsx", paths[i,], ignore.case = TRUE)) {
     budgets <- build(budgets, obs = clean_excel(paths[i,]))
+  }
+  # If PDF, run code to clean PDFs
+  if(grepl(".pdf", paths[i, ], ignore.case = TRUE)) {
+    budgets <- build(budgets, obs = )
   }
 }
 tictoc::toc()
