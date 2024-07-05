@@ -328,6 +328,28 @@ extract_.pdf <- function(text, pattern) {
   }
 }
 
+# Read in and clean one pdf file
+clean_pdf <- function(path) {
+  lgu <- gsub("-", " ", str_match(path, "/\\d{4}/[A-Za-z\\s]+/(.*)-Annual-Audit")[2])
+  region <- str_match(path, "Budgets/\\d{4}/([A-Za-z\\s]+)/")[2]
+  year <- str_match(path, "Budgets/(\\d{4})/")[2]
+  city <- ifelse(grepl("city", path, ignore.case = TRUE), 1, 0)
+  res <- data.frame(
+    lgu = lgu,
+    region = region,
+    year = year,
+    city = city
+  )
+  
+  # Loop over line items and build observation out of budget report
+  # May need to break code int fund types
+  for(item in items) {
+    
+  }
+  
+  return(res)
+}
+
 # Add one budget to df 
 build <- function(df = NULL, obs) {
   # If null, build new df
