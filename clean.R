@@ -330,7 +330,9 @@ extract_number <- function(input_string, target_string) {
 # Read in one PDF file and return budget report observation
 clean_pdf <- function(path) {
   text <- read_.pdf(path)
-  lgu <- gsub("-", " ", str_match(path, "/\\d{4}/[A-Za-z\\s]+/-?(.*)2022")[2])
+  # Adds space before first capital letter and reads one lgu in as NA
+  lgu <- gsub("[-_]", "", str_match(path, "/\\d{4}/[A-Za-z\\s]+/-?(.*)2022")[2])
+  lgu <- gsub("([^A-Z])([A-Z])", "\\1 \\2", lgu)
   region <- str_match(path, "Budgets/\\d{4}/([A-Za-z\\s]+)/")[2]
   year <- str_match(path, "Budgets/(\\d{4})/")[2]
   city <- ifelse(grepl("city", path, ignore.case = TRUE), 1, 0)
@@ -421,7 +423,7 @@ paths <- places |>
     return(budgets = out)
   }) |> rbind.data.frame()
 
-# Turn list into data frame (no zips)
+# Turn list into data frame (no zip directories)
 paths <- as.data.frame(as.matrix(places))
 
 # Create data frame of budget reports
