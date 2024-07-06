@@ -341,8 +341,9 @@ clean_pdf <- function(path) {
     city = city
   )
   
+  # Break code into fund types. Figure out how to do that
+  
   # Loop over line items and build observation out of budget report
-  # May need to break code int fund types
   for(string in items) {
     new <- data.frame(extract_number(text, string))
     names(new) <- tolower(string)
