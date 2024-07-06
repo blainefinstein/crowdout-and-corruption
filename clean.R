@@ -289,7 +289,13 @@ clean_excel <- function(path) {
 # read PDF
 read_.pdf <- function(path) {
   # Read each page of PDf into list
-  pages <- pdf_text(path)
+  #pages <- pdf_text(path)
+  pages <- tryCatch({
+    pdf_text(path)
+  }, error = function(err) {
+    message("Error: ", conditionMessage(err))
+    return("")
+  })
   
   # Put all text from list into one string
   text <- ""
@@ -306,31 +312,25 @@ read_.pdf <- function(path) {
   return(text)
 }
 
-# return df of budget items in text + corresponding amounts
-extract_.pdf <- function(text, pattern) {
-  # Initialize an empty data frame to store the results
-  res <- data.frame(matrix(ncol = 0, nrow = 1))
+# Find a line item in the budget text and return its corresponding amount
+extract_number <- function(input_string, target_string) {
+  # Regular expression to match the target string and the number pattern with optional parentheses
+  pattern <- paste0(target_string, ".*?\\(?([0-9,]+\\.[0-9]{2})\\)?\\s")
   
-  # Create a regular expression to match the pattern followed by any number of spaces or 'p',
-  # and then a number with commas and at least three digits, optionally surrounded by parentheses
-  regex <- paste0("(?<=", pattern, ")[\\s,\\-p]*\\(?([\\d,\\s-]{3,}\\.?\\d*)(?=\\D|\\)\\D|\\)$)")
+  # Use str_extract to find the first match
+  match <- str_extract(input_string, pattern)
   
-  # Use str_match to find the match and extract the number
-  match <- str_match(text, regex)
+  # Extract only the number from the match
+  number <- str_match(match, "\\(?([0-9,]+\\.[0-9]{2})\\)?")[,2]
   
-  # The result will be a matrix; we need the second column for the matched group
-  if (!is.na(match[1, 2])) {
-    # Remove commas and parentheses, then convert to numeric
-    number <- gsub("[,()\\s]", "", match[1, 2])
-    return(as.numeric(number))
-  } else {
-    return(NA)  # Return NA if no match is found
-  }
+  # Return the result as a number without commas
+  return(as.numeric(gsub(",", "", number)))
 }
 
-# Read in and clean one pdf file
+# Read in one PDF file and return budget report observation
 clean_pdf <- function(path) {
-  lgu <- gsub("-", " ", str_match(path, "/\\d{4}/[A-Za-z\\s]+/(.*)-Annual-Audit")[2])
+  text <- read_.pdf(path)
+  lgu <- gsub("-", " ", str_match(path, "/\\d{4}/[A-Za-z\\s]+/-?(.*)2022")[2])
   region <- str_match(path, "Budgets/\\d{4}/([A-Za-z\\s]+)/")[2]
   year <- str_match(path, "Budgets/(\\d{4})/")[2]
   city <- ifelse(grepl("city", path, ignore.case = TRUE), 1, 0)
@@ -343,9 +343,18 @@ clean_pdf <- function(path) {
   
   # Loop over line items and build observation out of budget report
   # May need to break code int fund types
-  for(item in items) {
-    
+  for(string in items) {
+    new <- data.frame(extract_number(text, string))
+    names(new) <- tolower(string)
+    res <- cbind(res, new)
   }
+  
+  # Column name repair
+  colnames(res) <- gsub(" ", "_", colnames(res))
+  colnames(res) <- gsub("_[:][_]", "_", colnames(res))
+  colnames(res) <- gsub(",_", "_", colnames(res))
+  colnames(res) <- gsub("/", "_", colnames(res))
+  colnames(res) <- gsub("_-_", "_", colnames(res))
   
   return(res)
 }
@@ -395,33 +404,36 @@ pattern <- paste(audit_lang, collapse="|")
 ##################
 
 # Set directory from which to make budget data
-directory <- "/Budgets/2022/NCR"
+directory <- "/Budgets/2022/Bangsamoro"
 
 # Get unzipped directories (every other file)
 places <- list.files(paste0(getwd(), directory)) |> 
-  map(\(x) paste0(directory, x))
+  map(\(x) paste0(paste0(directory, "/"), x))
 places <- places[seq_along(places) %% 2 != 0]
 
-# Map over unzipped directories to get budget report file paths
+# Map over unzipped directories to get budget report file paths (if have zips)
 paths <- places |> 
   map_df(function(x) {
     out <- list.files(x) |> 
       map_df(\(y) data.frame(path = paste0(paste0(x, "/"), y))) |> 
-      filter(grepl(pattern, path) == TRUE)
+        filter(grepl(pattern, path == TRUE))
     return(budgets = out)
   }) |> rbind.data.frame()
 
+# Turn list into data frame (no zips)
+paths <- as.data.frame(as.matrix(places))
+
 # Create data frame of budget reports
 tictoc::tic()
-budgets <- build(obs = clean_excel(paths[2,]))
-for (i in 3:nrow(paths)) {
+budgets <- build(obs = clean_pdf(substring(paths[3,], 2)))
+for (i in 4:nrow(paths)) {
   # If excel doc, run code to clean Excel docs
   if(grepl(".xlsx", paths[i,], ignore.case = TRUE)) {
     budgets <- build(budgets, obs = clean_excel(paths[i,]))
   }
   # If PDF, run code to clean PDFs
   if(grepl(".pdf", paths[i, ], ignore.case = TRUE)) {
-    budgets <- build(budgets, obs = )
+    budgets <- build(budgets, obs = clean_pdf(substring(paths[i,], 2)))
   }
 }
 tictoc::toc()
