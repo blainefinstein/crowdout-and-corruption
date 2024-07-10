@@ -344,6 +344,7 @@ clean_pdf <- function(path) {
   )
   
   # Break code into fund types. Figure out how to do that
+  # Comment here
   
   # Loop over line items and build observation out of budget report
   for(string in items) {
