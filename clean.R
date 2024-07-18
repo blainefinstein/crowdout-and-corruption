@@ -327,11 +327,18 @@ extract_number <- function(input_string, target_string) {
   return(as.numeric(gsub(",", "", number)))
 }
 
+# Find a line item in budget text and return each corresponding fund amnt
+extract_funds <- function(input_string, target_string) {
+  
+}
+
 # Read in one PDF file and return budget report observation
 clean_pdf <- function(path) {
   text <- read_.pdf(path)
-  # Adds space before first capital letter and reads one lgu in as NA
   lgu <- gsub("[-_]", "", str_match(path, "/\\d{4}/[A-Za-z\\s]+/-?(.*)2022")[2])
+  if(is.na(lgu)) {
+    lgu <- gsub("[-_]", "", str_match(path, "/\\d{4}/[A-Za-z\\s]+/-?(.*)Audit_Report.pdf")[2])
+  }
   lgu <- gsub("([^A-Z])([A-Z])", "\\1 \\2", lgu)
   region <- str_match(path, "Budgets/\\d{4}/([A-Za-z\\s]+)/")[2]
   year <- str_match(path, "Budgets/(\\d{4})/")[2]
@@ -344,7 +351,6 @@ clean_pdf <- function(path) {
   )
   
   # Break code into fund types. Figure out how to do that
-  # Comment here
   
   # Loop over line items and build observation out of budget report
   for(string in items) {
