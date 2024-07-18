@@ -41,8 +41,19 @@ items <- f[[1]] |> filter(!is.na(...2)) |> #Financial statement, first sheet
   append(a[[4]] |> filter(!is.na(...3)) |> pull(...3)) |> #fourth sheet
   append(a[[5]] |> filter(!is.na(...3)) |> pull(...3)) |> #fifth sheet
   append(a[[5]] |> filter(!is.na(...4)) |> pull(...4)) |>
+  append("Inventories - Other Supplies") |> 
   setdiff(c("A.", "B.", "C.")) |> 
   unique()
+
+# clean list of budget items from financial report
+for (i in 1:length(items)) {
+  for (pattern in c("^a\\.\\s*", "^b\\.\\s*", "^c\\.\\s*", "^1\\.\\s*", "^2\\.\\s*")) {
+    if (str_detect(items[i], pattern)) {
+      items[i] <- str_replace(items[i], pattern, "")
+      break 
+    }
+  }
+}
 
 # construct list of col names for budget report df
 cols <- c("lgu", "region", "year", "city") |> 
