@@ -340,7 +340,33 @@ extract_number <- function(input_string, target_string) {
 
 # Find a line item in budget text and return each corresponding fund amnt
 extract_funds <- function(input_string, target_string) {
+  # Regex to match line item and funds
+  pattern <- paste0(target_string, ".*?\\(?([0-9,]+\\.[0-9]{2})\\)?.*?\\(?([0-9,]+\\.[0-9]{2})\\)?.*?\\(?([0-9,]+\\.[0-9]{2})\\)?\\s")
   
+  # Use str_extract to find the first match
+  match <- str_extract(input_string, pattern)
+  
+  # Extract only gen fund from the match
+  gen <- str_match(match, ".*?\\(?([0-9,]+\\.[0-9]{2})\\)?.*?\\(?[0-9,]+\\.[0-9]{2}\\)?.*?\\(?[0-9,]+\\.[0-9]{2}\\)?\\s")[,2]
+  gen <- as.numeric(gsub(",", "", gen))
+  
+  # Extract only sped fund from the match
+  sped <- str_match(match, ".*?\\(?[0-9,]+\\.[0-9]{2}\\)?.*?\\(?([0-9,]+\\.[0-9]{2})\\)?.*?\\(?[0-9,]+\\.[0-9]{2}\\)?\\s")[,2]
+  sped <- as.numeric(gsub(",", "", sped))
+  
+  # Extract only trust fund from the match
+  trust <- str_match(match, ".*?\\(?[0-9,]+\\.[0-9]{2}\\)?.*?\\(?[0-9,]+\\.[0-9]{2}\\)?.*?\\(?([0-9,]+\\.[0-9]{2})\\)?\\s")[,2]
+  trust <- as.numeric(gsub(",", "", trust))
+  
+  # If all three equal, it means other two funds not present and code picking up 2022
+  # and 2021. Keep gen and make sped and trust NA
+  if(!is.na(gen) & !is.na(sped) & !is.na(trust) & (gen == sped) & (sped == trust)) {
+    sped <- NA
+    trust <- NA
+  }
+  
+  # Return the result as a number without commas
+  return(data.frame(gen = gen, sped = sped, trust = trust))
 }
 
 # Read in one PDF file and return budget report observation
@@ -361,12 +387,18 @@ clean_pdf <- function(path) {
     city = city
   )
   
-  # Break code into fund types. Figure out how to do that
-  
   # Loop over line items and build observation out of budget report
   for(string in items) {
     new <- data.frame(extract_number(text, string))
     names(new) <- tolower(string)
+    res <- cbind(res, new)
+  }
+  
+  # Loop over line items and find funds
+  for(string in items) {
+    new <- extract_funds(text, string)
+    names(new) <- c(paste(tolower(string), "gen"), paste(tolower(string), "sped"),
+                    paste(tolower(string), "trust"))
     res <- cbind(res, new)
   }
   
