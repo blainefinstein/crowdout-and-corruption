@@ -34,14 +34,6 @@ items <- f[[1]] |> filter(!is.na(...2)) |> #Financial statement, first sheet
   append(f[[5]][5:nrow(f[[5]]), ] |> pull(1) |> na.omit()) |>  #fifth sheet
   append(f[[5]] |> filter(!is.na(...2)) |> pull(...2)) |> 
   append(f[[5]] |> filter(!is.na(...3)) |> pull(...3)) |>
-  append(a[[1]] |> filter(!is.na(...5)) |> pull(...5)) |> #Annex, first sheet
-  append(c("Net Assets/Equity")) |> 
-  append(a[[2]] |> filter(!is.na(...4)) |> pull(...4)) |> #second sheet
-  append(a[[3]] |> filter(!is.na(...3)) |> pull(...3)) |> #third sheet
-  append(a[[4]] |> filter(!is.na(...3)) |> pull(...3)) |> #fourth sheet
-  append(a[[5]] |> filter(!is.na(...3)) |> pull(...3)) |> #fifth sheet
-  append(a[[5]] |> filter(!is.na(...4)) |> pull(...4)) |>
-  append("Inventories - Other Supplies") |> 
   setdiff(c("A.", "B.", "C.")) |> 
   unique()
 
@@ -57,32 +49,7 @@ for (i in 1:length(items)) {
 
 # construct list of col names for budget report df
 cols <- c("lgu", "region", "year", "city") |> 
-  append(f[[1]] |> filter(!is.na(...2)) |> pull(...2)) |> #Financial statement, first sheet
-           append(f[[2]] |> filter(!is.na(...2)) |> pull(...2)) |> #second sheet
-           append("Current Operating Expenses") |> 
-           append(f[[3]][5:nrow(f[[3]]), ] |> pull('CITY OF CALOOCAN') |> na.omit()) |> #third sheet
-           append(c("Transfer of PPE from Trust Fund/General Fund/OtherFund",
-                    "Prior Period Errors", "Prior Year's Adjustments")) |> 
-           append(f[[4]][5:nrow(f[[4]]), ] |> pull(1) |> na.omit()) |>  #fourth sheet
-           append(f[[4]] |> filter(!is.na(...2)) |> pull(...2)) |> 
-           append(f[[4]] |> filter(!is.na(...3)) |> pull(...3)) |> 
-           append(f[[5]][5:nrow(f[[5]]), ] |> pull(1) |> na.omit()) |>  #fifth sheet
-           append(f[[5]] |> filter(!is.na(...2)) |> pull(...2)) |> 
-           append(f[[5]] |> filter(!is.na(...3)) |> pull(...3)) |>
-  append(a[[1]] |> filter(!is.na(...5)) |> pull(...5) |> #Annex, first sheet
-  append(c("Net Assets/Equity")) |> 
-  append(a[[2]] |> filter(!is.na(...4)) |> pull(...4)) |> #second sheet
-  append(a[[3]] |> filter(!is.na(...3)) |> pull(...3)) |> #third sheet
-  append(a[[4]] |> filter(!is.na(...3)) |> pull(...3)) |> unique() |> 
-    lapply(function(x) {
-      list(paste0(x, " gen"), paste0(x, " sped"), paste0(x, " trust"))
-    }) |> unlist()) |>
-  append(a[[5]] |> filter(!is.na(...3)) |> pull(...3) |> #fifth sheet
-  append(a[[5]] |> filter(!is.na(...4)) |> pull(...4)) |>
-  setdiff(c("A.", "B.", "C.")) |> unique() |> 
-    lapply(function(x) {
-      list(paste0(x, " original"), paste0(x, " final"), paste0(x, " actual"))
-    }) |> unlist()) |>
+  append(items) |>
   sapply(function(x) {
     x <- tolower(x)                      # Convert to lower case
     x <- gsub(" ", "_", x)               # Replace spaces with underscores
@@ -395,12 +362,12 @@ clean_pdf <- function(path) {
   }
   
   # Loop over line items and find funds
-  for(string in items) {
-    new <- extract_funds(text, string)
-    names(new) <- c(paste(tolower(string), "gen"), paste(tolower(string), "sped"),
-                    paste(tolower(string), "trust"))
-    res <- cbind(res, new)
-  }
+  #for(string in items) {
+    #new <- extract_funds(text, string)
+    #names(new) <- c(paste(tolower(string), "gen"), paste(tolower(string), "sped"),
+                    #paste(tolower(string), "trust"))
+    #res <- cbind(res, new)
+  #}
   
   # Column name repair
   colnames(res) <- gsub(" ", "_", colnames(res))
@@ -469,7 +436,7 @@ paths <- places |>
   map_df(function(x) {
     out <- list.files(x) |> 
       map_df(\(y) data.frame(path = paste0(paste0(x, "/"), y))) |> 
-        filter(grepl(pattern, path == TRUE))
+        filter(grepl(pattern, path) == TRUE)
     return(budgets = out)
   }) |> rbind.data.frame()
 
