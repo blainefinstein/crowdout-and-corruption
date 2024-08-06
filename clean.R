@@ -10,42 +10,14 @@ library(pdftools)
 #### Helper functions and variable initialization ####
 ######################################################
 
-## Excel helper functions
-
 # reads each sheet of the excel into a list
-read_.xlsx <- function(path) {
+read_helper <- function(path) {
   sheets <- excel_sheets(path)
   return(map(sheets, \(x) read_excel(path, sheet = x)))
 }
 
-# construct list of budget items to look up in data
-f <- read_.xlsx("Budgets/2022/NCR/Caloocan-City-Annual-Audit-Report-2022/07-CaloocanCity2022_Part1-FS.xlsx")
-a <- read_.xlsx("Budgets/2022/NCR/Caloocan-City-Annual-Audit-Report-2022/11-CaloocanCity2022_Part4-Annexes.xlsx")
-items <- f[[1]] |> filter(!is.na(...2)) |> #Financial statement, first sheet 
-  pull(...2) |> 
-  append(f[[2]] |> filter(!is.na(...2)) |> pull(...2)) |> #second sheet
-  append("Current Operating Expenses") |> 
-  append(f[[3]][5:nrow(f[[3]]), ] |> pull('CITY OF CALOOCAN') |> na.omit()) |> #third sheet
-  append(c("Transfer of PPE from Trust Fund/General Fund/OtherFund",
-           "Prior Period Errors", "Prior Year's Adjustments")) |> 
-  append(f[[4]][5:nrow(f[[4]]), ] |> pull(1) |> na.omit()) |>  #fourth sheet
-  append(f[[4]] |> filter(!is.na(...2)) |> pull(...2)) |> 
-  append(f[[4]] |> filter(!is.na(...3)) |> pull(...3)) |> 
-  append(f[[5]][5:nrow(f[[5]]), ] |> pull(1) |> na.omit()) |>  #fifth sheet
-  append(f[[5]] |> filter(!is.na(...2)) |> pull(...2)) |> 
-  append(f[[5]] |> filter(!is.na(...3)) |> pull(...3)) |>
-  setdiff(c("A.", "B.", "C.")) |> 
-  unique()
-
-# clean list of budget items from financial report
-for (i in 1:length(items)) {
-  for (pattern in c("^a\\.\\s*", "^b\\.\\s*", "^c\\.\\s*", "^1\\.\\s*", "^2\\.\\s*")) {
-    if (str_detect(items[i], pattern)) {
-      items[i] <- str_replace(items[i], pattern, "")
-      break 
-    }
-  }
-}
+# Read in list of budget items to look up in data
+items <- readLines("items.csv")[-1]
 
 # construct list of col names for budget report df
 cols <- c("lgu", "region", "year", "city") |> 
@@ -59,210 +31,25 @@ cols <- c("lgu", "region", "year", "city") |>
     return(x)
   })
 
-# fixes year to consistent whole number for key detection
-round_year <- function(df, year) {
-  # Convert to character
-  df <- as.data.frame(lapply(df, as.character), stringsAsFactors = FALSE)
+# Read in excel budget report and turn into text
+read_.xlsx <- function(path) {
+  # Get the names of all sheets
+  sheet_names <- excel_sheets(path)
   
-  # Construct regular expression pattern to find instances of the specified
-  # number followed by decimals
-  years <- paste0("\\b", year, "\\.\\d+\\b")
+  # Initialize an empty string to store the final result
+  final_str <- ""
   
-  # Loop through columns
-  for (col in names(df)) {
-    matches <- regmatches(df[[col]], gregexpr(years, df[[col]]))
-    
-    # Replace matched instances with the specified number
-    for (i in seq_along(matches)) {
-      for (match in matches[[i]]) {
-        df[[col]][i] <- gsub(match, year, df[[col]][i])
-      }
-    }
+  # Loop through each sheet and append its content to the final string
+  for (sheet in sheet_names) {
+    df <- read_excel(path, sheet = sheet)
+    df_str <- capture.output(write.table(df, row.names = FALSE, sep = " ", quote = FALSE))
+    df_str <- paste(df_str, collapse = "\n")
+    final_str <- paste(final_str, paste("Sheet:", sheet), df_str, sep = " ")
   }
   
-  # Convert back to numeric if columns were originally numeric
-  for (col in names(df)) {
-    if (is.numeric(df[[col]])) {
-      df[[col]] <- as.numeric(df[[col]])
-    }
-  }
-  
-  return(df)
+  # Print the final concatenated string
+  return(final_str)
 }
-
-# see if col contains year, then rename col and round year appropriately
-find_year <- function(data_frame, year) {
-  for (col in names(data_frame)) {
-    if (any(grepl(paste0("^", "2022", "$"), data_frame[[col]])) &&
-        all(sapply(data_frame[[col]], is.numeric))) {
-      names(data_frame)[names(data_frame) == col] <- "amount"
-    }
-  }
-  return(round_year(data_frame, year))
-}
-
-# find annex funds and rename cols
-funds <- c("General Fund", "Special Education", "Special Education Fund", "Trust Fund",
-           "Original", "Final", "Actual Amounts")
-find_funds <- function(df) {
-  # Initialize list of new col names
-  new <- c("gen", "sped", "sped", "trust", "original", "final", "actual")
-  # Loop through each row in the data frame
-  for (row in 1:nrow(df)) {
-    # Loop through each col in the data frame
-    for (col in 1:ncol(df)) {
-      # Loop through fund names
-      for (fund in funds) {
-        # Check if cell matches fund name
-        if(!is.na(df[row, col]) && df[row, col] == fund) {
-          # Check if none of the values in the column contain any strings from the items list
-          if (!any(df[(row+1):nrow(df), col] %in% items, na.rm = TRUE)) {
-            # Rename the column to the corresponding fund name
-            colnames(df)[col] <- new[which(funds == fund)]
-          }
-        }
-      }
-    }
-  }
-  return(df)
-}
-
-# return df of budget items in data + corresponding amounts
-extract_.xlsx <- function(df) {
-  # Initialize an empty data frame to store the results
-  res <- data.frame(matrix(ncol = 0, nrow = 1))
-  
-  # Code to perform if df contains amount col
-  if("amount" %in% names(df)) {
-    # Loop through each string in the strings vector
-    for (string in items) {
-      # Create a regex pattern to match the string exactly
-      pattern <- paste0("^", string, "$")
-      
-      # Loop through each column in the data frame
-      for (col_name in names(df)) {
-        # Check if the column contains the string exactly
-        matching_rows <- which(grepl(pattern, df[[col_name]]))
-        
-        # If there's a match, add a new column to the result data frame
-        if (length(matching_rows) > 0) {
-          # Convert the string to lower case and replace spaces with underscores
-          column_name <- tolower(gsub(" ", "_", string))
-          
-          # Extract the amount from the matching row
-          amount <- df$amount[matching_rows[1]]
-          
-          # Add the amount as a new column to the result data frame
-          res[[column_name]] <- amount
-        }
-      }
-    }
-  }
-  
-  # Code to perform if df contains gen, sped, and trust funds
-  if("gen" %in% names(df)) {
-    
-    # Loop through each string in the strings vector
-    for (string in items) {
-      # Create a regex pattern to match the string exactly
-      pattern <- paste0("^", string, "$")
-      
-      # Loop through each column in the data frame
-      for (col_name in names(df)) {
-        # Check if the column contains the string exactly
-        matching_rows <- which(grepl(pattern, df[[col_name]]))
-        
-        # If there's a match, add a new column to the result data frame
-        if (length(matching_rows) > 0) {
-          # Convert the string to lower case and replace spaces with underscores
-          column_name <- tolower(gsub(" ", "_", string))
-          
-          # Extract the amount from the matching rows
-          gen <- df$gen[matching_rows[1]]
-          sped <- df$sped[matching_rows[1]]
-          trust <- df$trust[matching_rows[1]]
-          
-          # Add the amount as a new column to the result data frame
-          res[[paste0(column_name, "_gen")]] <- gen
-          res[[paste0(column_name, "_sped")]] <- sped
-          res[[paste0(column_name, "_trust")]] <- trust
-        }
-      }
-    }
-  }
-  
-  # Code to perform if df contains original, final, and actual budgets
-  if("original" %in% names(df)) {
-    
-    # Loop through each string in the strings vector
-    for (string in items) {
-      # Create a regex pattern to match the string exactly
-      pattern <- paste0("^", string, "$")
-      
-      # Loop through each column in the data frame
-      for (col_name in names(df)) {
-        # Check if the column contains the string exactly
-        matching_rows <- which(grepl(pattern, df[[col_name]]))
-        
-        # If there's a match, add a new column to the result data frame
-        if (length(matching_rows) > 0) {
-          # Convert the string to lower case and replace spaces with underscores
-          column_name <- tolower(gsub(" ", "_", string))
-          
-          # Extract the amount from the matching rows
-          original <- df$original[matching_rows[1]]
-          final <- df$final[matching_rows[1]]
-          actual <- df$actual[matching_rows[1]]
-          
-          # Add the amount as a new column to the result data frame
-          res[[paste0(column_name, "_original")]] <- original
-          res[[paste0(column_name, "_final")]] <- final
-          res[[paste0(column_name, "_actual")]] <- actual
-        }
-      }
-    }
-  }
-  
-  # Column name repair
-  colnames(res) <- gsub("_[:][_]", "_", colnames(res))
-  colnames(res) <- gsub(",_", "_", colnames(res))
-  colnames(res) <- gsub("/", "_", colnames(res))
-  colnames(res) <- gsub("_-_", "_", colnames(res))
-  
-  # Return the result data frame
-  return(res)
-}
-
-# Read in and clean one excel file
-clean_excel <- function(path) {
-  annex <- grepl("annex", path, ignore.case = TRUE)
-  lgu <- gsub("-", " ", str_match(path, "/\\d{4}/[A-Za-z\\s]+/(.*)-Annual-Audit")[2])
-  region <- str_match(path, "Budgets/\\d{4}/([A-Za-z\\s]+)/")[2]
-  year <- str_match(path, "Budgets/(\\d{4})/")[2]
-  city <- ifelse(grepl("city", path, ignore.case = TRUE), 1, 0)
-  sheets <- read_.xlsx(path)
-  res <- data.frame(
-    lgu = lgu,
-    region = region,
-    year = year,
-    city = city
-  )
-  
-  # Loop over sheets and build observation out of budget report
-  if(annex) {
-    for (i in 1:length(sheets)) {
-      res <- cbind(res, sheets[[i]] |> find_funds() |> extract.xlsx())
-    }
-  } else {
-    for (i in 1:length(sheets)) {
-      res <- cbind(res, sheets[[i]] |> find_year(2022) |> extract.xlsx())
-    }
-  }
-  
-  return(res)
-}
-
-## PDF helper functions
 
 # read PDF
 read_.pdf <- function(path) {
@@ -293,7 +80,7 @@ read_.pdf <- function(path) {
 # Find a line item in the budget text and return its corresponding amount
 extract_number <- function(input_string, target_string) {
   # Regular expression to match the target string and the number pattern with optional parentheses
-  pattern <- paste0(target_string, ".*?\\(?([0-9,]+\\.[0-9]{2})\\)?\\s")
+  pattern <- paste0(target_string, ".*?\\(?([0-9,]+\\.[0-9]+)\\)?\\s")
   
   # Use str_extract to find the first match
   match <- str_extract(input_string, pattern)
@@ -305,48 +92,15 @@ extract_number <- function(input_string, target_string) {
   return(as.numeric(gsub(",", "", number)))
 }
 
-# Find a line item in budget text and return each corresponding fund amnt
-extract_funds <- function(input_string, target_string) {
-  # Regex to match line item and funds
-  pattern <- paste0(target_string, ".*?\\(?([0-9,]+\\.[0-9]{2})\\)?.*?\\(?([0-9,]+\\.[0-9]{2})\\)?.*?\\(?([0-9,]+\\.[0-9]{2})\\)?\\s")
-  
-  # Use str_extract to find the first match
-  match <- str_extract(input_string, pattern)
-  
-  # Extract only gen fund from the match
-  gen <- str_match(match, ".*?\\(?([0-9,]+\\.[0-9]{2})\\)?.*?\\(?[0-9,]+\\.[0-9]{2}\\)?.*?\\(?[0-9,]+\\.[0-9]{2}\\)?\\s")[,2]
-  gen <- as.numeric(gsub(",", "", gen))
-  
-  # Extract only sped fund from the match
-  sped <- str_match(match, ".*?\\(?[0-9,]+\\.[0-9]{2}\\)?.*?\\(?([0-9,]+\\.[0-9]{2})\\)?.*?\\(?[0-9,]+\\.[0-9]{2}\\)?\\s")[,2]
-  sped <- as.numeric(gsub(",", "", sped))
-  
-  # Extract only trust fund from the match
-  trust <- str_match(match, ".*?\\(?[0-9,]+\\.[0-9]{2}\\)?.*?\\(?[0-9,]+\\.[0-9]{2}\\)?.*?\\(?([0-9,]+\\.[0-9]{2})\\)?\\s")[,2]
-  trust <- as.numeric(gsub(",", "", trust))
-  
-  # If all three equal, it means other two funds not present and code picking up 2022
-  # and 2021. Keep gen and make sped and trust NA
-  if(!is.na(gen) & !is.na(sped) & !is.na(trust) & (gen == sped) & (sped == trust)) {
-    sped <- NA
-    trust <- NA
-  }
-  
-  # Return the result as a number without commas
-  return(data.frame(gen = gen, sped = sped, trust = trust))
-}
-
-# Read in one PDF file and return budget report observation
-clean_pdf <- function(path) {
-  text <- read_.pdf(path)
-  lgu <- gsub("[-_]", "", str_match(path, "/\\d{4}/[A-Za-z\\s]+/-?(.*)2022")[2])
-  if(is.na(lgu)) {
-    lgu <- gsub("[-_]", "", str_match(path, "/\\d{4}/[A-Za-z\\s]+/-?(.*)Audit_Report.pdf")[2])
-  }
-  lgu <- gsub("([^A-Z])([A-Z])", "\\1 \\2", lgu)
+# Read in one budget report file and return observation
+clean <- function(path) {
+  text <- ifelse(grepl(".pdf", path, ignore.case = TRUE), read_.pdf(path),
+                 read_.xlsx(path))
+  lgu <- gsub("-", " ", str_match(path, "/\\d{4}/[A-Za-z\\s]+/(.*)-Annual-Audit")[2])
   region <- str_match(path, "Budgets/\\d{4}/([A-Za-z\\s]+)/")[2]
   year <- str_match(path, "Budgets/(\\d{4})/")[2]
   city <- ifelse(grepl("city", path, ignore.case = TRUE), 1, 0)
+  sheets <- read_.xlsx(path)
   res <- data.frame(
     lgu = lgu,
     region = region,
@@ -361,14 +115,6 @@ clean_pdf <- function(path) {
     res <- cbind(res, new)
   }
   
-  # Loop over line items and find funds
-  #for(string in items) {
-    #new <- extract_funds(text, string)
-    #names(new) <- c(paste(tolower(string), "gen"), paste(tolower(string), "sped"),
-                    #paste(tolower(string), "trust"))
-    #res <- cbind(res, new)
-  #}
-  
   # Column name repair
   colnames(res) <- gsub(" ", "_", colnames(res))
   colnames(res) <- gsub("_[:][_]", "_", colnames(res))
@@ -379,7 +125,7 @@ clean_pdf <- function(path) {
   return(res)
 }
 
-# Add one budget to df 
+# Add one budget to df of budget reports
 build <- function(df = NULL, obs) {
   # If null, build new df
   if(is.null(df)) {
@@ -416,7 +162,7 @@ build <- function(df = NULL, obs) {
 }
 
 # file name expressions that indicate a budget
-audit_lang <- c("Part1-FS", "Part1-Financial_Statements", "Part4-Annexes")
+audit_lang <- c("Part1-FS", "Part1-Financial_Statements")
 pattern <- paste(audit_lang, collapse="|")
 
 ##################
@@ -424,7 +170,7 @@ pattern <- paste(audit_lang, collapse="|")
 ##################
 
 # Set directory from which to make budget data
-directory <- "/Budgets/2022/Bangsamoro"
+directory <- "/Budgets/2022/NCR"
 
 # Get unzipped directories (every other file)
 places <- list.files(paste0(getwd(), directory)) |> 
@@ -434,7 +180,7 @@ places <- places[seq_along(places) %% 2 != 0]
 # Map over unzipped directories to get budget report file paths (if have zips)
 paths <- places |> 
   map_df(function(x) {
-    out <- list.files(x) |> 
+    out <- list.files(paste0(getwd(), x)) |> 
       map_df(\(y) data.frame(path = paste0(paste0(x, "/"), y))) |> 
         filter(grepl(pattern, path) == TRUE)
     return(budgets = out)
@@ -445,16 +191,9 @@ paths <- as.data.frame(as.matrix(places))
 
 # Create data frame of budget reports
 tictoc::tic()
-budgets <- build(obs = clean_pdf(substring(paths[3,], 2)))
-for (i in 4:nrow(paths)) {
-  # If excel doc, run code to clean Excel docs
-  if(grepl(".xlsx", paths[i,], ignore.case = TRUE)) {
-    budgets <- build(budgets, obs = clean_excel(paths[i,]))
+budgets <- build(obs = clean(substring(paths[1,], 2)))
+for (i in 2:nrow(paths)) {
+    budgets <- build(budgets, obs = clean(substring(paths[i,], 2)))
   }
-  # If PDF, run code to clean PDFs
-  if(grepl(".pdf", paths[i, ], ignore.case = TRUE)) {
-    budgets <- build(budgets, obs = clean_pdf(substring(paths[i,], 2)))
-  }
-}
 tictoc::toc()
 
