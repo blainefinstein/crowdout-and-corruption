@@ -98,15 +98,28 @@ extract_number <- function(text, target_string) {
   return(as.numeric(gsub(",", "", number)))
 }
 
+# Code to initialize province x year specific vars
+capture <- function(path) {
+  if(grepl("NCR", path) & grepl("2022", path)) {
+    return(gsub("-", " ", str_match(path, "/\\d{4}/[A-Za-z\\s]+/(.*)-Annual-Audit")[2]))
+  }
+  if(grepl("Bangsamoro", path) & grepl("2022", path)) {
+    lgu <- gsub("[-_]", "", str_match(path, "/\\d{4}/[A-Za-z\\s]+/-?(.*)2022")[2])
+    if(is.na(lgu)) {
+      lgu <- gsub("[-_]", "", str_match(path, "/\\d{4}/[A-Za-z\\s]+/-?(.*)Audit_Report.pdf")[2])
+    }
+    return(gsub("([^A-Z])([A-Z])", "\\1 \\2", lgu))
+  }
+}
+
 # Read in one budget report file and return observation
 clean <- function(path) {
   text <- ifelse(grepl(".pdf", path, ignore.case = TRUE), read_.pdf(path),
                  read_.xlsx(path))
-  lgu <- gsub("-", " ", str_match(path, "/\\d{4}/[A-Za-z\\s]+/(.*)-Annual-Audit")[2])
+  lgu <- capture(path)
   region <- str_match(path, "Budgets/\\d{4}/([A-Za-z\\s]+)/")[2]
   year <- str_match(path, "Budgets/(\\d{4})/")[2]
   city <- ifelse(grepl("city", path, ignore.case = TRUE), 1, 0)
-  sheets <- read_.xlsx(path)
   res <- data.frame(
     lgu = lgu,
     region = region,
@@ -195,10 +208,13 @@ paths <- places |>
 # Turn list into data frame (no zip directories)
 paths <- as.data.frame(as.matrix(places))
 
+# Index at which to start reading
+start <- 1
+
 # Create data frame of budget reports
 tictoc::tic()
-budgets <- build(obs = clean(substring(paths[1,], 2)))
-for (i in 2:nrow(paths)) {
+budgets <- build(obs = clean(substring(paths[start,], 2)))
+for (i in (start + 1):nrow(paths)) {
     budgets <- build(budgets, obs = clean(substring(paths[i,], 2)))
   }
 tictoc::toc()
