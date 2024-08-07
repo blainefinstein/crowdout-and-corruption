@@ -17,7 +17,13 @@ read_helper <- function(path) {
 }
 
 # Read in list of budget items to look up in data
-items <- readLines("items.csv")[-1]
+items <- readLines("items.csv")
+items <- gsub('^"|"$', '', items)
+
+# List of budget items with redundant language
+repeats <- c("Service and Business Income", "Non-Current Liabilities", "Expenditures",
+             "Tax Revenue", "Non-Tax Revenue", "Revenue", "Property, Plant, and Equipment",
+             "Non-Current Assets")
 
 # construct list of col names for budget report df
 cols <- c("lgu", "region", "year", "city") |> 
@@ -51,10 +57,9 @@ read_.xlsx <- function(path) {
   return(final_str)
 }
 
-# read PDF
+# Read PDF into character string
 read_.pdf <- function(path) {
   # Read each page of PDf into list
-  #pages <- pdf_text(path)
   pages <- tryCatch({
     pdf_text(path)
   }, error = function(err) {
@@ -62,7 +67,7 @@ read_.pdf <- function(path) {
     return("")
   })
   
-  # Put all text from list into one string
+  # Combine all text from list into one string
   text <- ""
   for(i in 1:length(pages)) {
     text <- paste(text, pages[i])
@@ -78,15 +83,16 @@ read_.pdf <- function(path) {
 }
 
 # Find a line item in the budget text and return its corresponding amount
-extract_number <- function(input_string, target_string) {
+extract_number <- function(text, target_string) {
   # Regular expression to match the target string and the number pattern with optional parentheses
-  pattern <- paste0(target_string, ".*?\\(?([0-9,]+\\.[0-9]+)\\)?\\s")
+  pattern <- paste0(target_string, ".*?\\(?([0-9]{4,}(?:,[0-9]{3})*(?:\\.[0-9]+)?)\\)?(?=\\s)")
   
-  # Use str_extract to find the first match
-  match <- str_extract(input_string, pattern)
+  # Change regex to match budget items with repeat language
+  pattern <- ifelse(target_string %in% repeats, paste0("(?<!Total |Tax |of |Other |- )",
+                                                       pattern), pattern)
   
   # Extract only the number from the match
-  number <- str_match(match, "\\(?([0-9,]+\\.[0-9]{2})\\)?")[,2]
+  number <- str_match(text, pattern)[,2]
   
   # Return the result as a number without commas
   return(as.numeric(gsub(",", "", number)))
