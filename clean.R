@@ -6,16 +6,6 @@
 # Load packages
 source("packages.R")
 
-c("readxl", "purrr", "tidyverse", "TAF", "NLP", "stringr", "pdftools") |>
-
-library(readxl)
-library(purrr)
-library(tidyverse)
-library(TAF)
-library(NLP)
-library(stringr)
-library(pdftools)
-
 # Read in list of budget items to look up in data
 items <- readLines("items.csv")
 items <- gsub('^"|"$', '', items)
@@ -25,7 +15,7 @@ repeats <- c("Service and Business Income", "Non-Current Liabilities", "Expendit
              "Tax Revenue", "Non-Tax Revenue", "Revenue", "Property, Plant, and Equipment",
              "Non-Current Assets")
 
-# construct list of col names for budget report df
+# Construct list of col names for budget report df
 cols <- c("lgu", "region", "year", "city") |> 
   append(items) |>
   sapply(function(x) {
@@ -161,15 +151,6 @@ build <- function(df = NULL, obs) {
       }
     }
   } else {
-    # # If municipality name already in df, add to same row
-    # if(obs$lgu %in% df$lgu) {
-    #   i <- which(df == obs$lgu)
-    #   for (name in names(df)) {
-    #     if(name %in% names(obs) && is.na(df[[name]][i])) {
-    #       df[[name]][i] <- obs[[name]]
-    #     }
-    #   }
-    # } else {
       # If municipality name not already in df, add to new row
       new_row <- data.frame(matrix(ncol = length(cols), nrow = 1))
       names(new_row) <- cols
@@ -180,14 +161,12 @@ build <- function(df = NULL, obs) {
       }
       df <- rbind(df, new_row)
     } 
-  #}
-  
   return(df)
 }
 
-# file name expressions that indicate a budget
-audit_lang <- c("Part1-FS", "Part1-Financial_Statements")
-pattern <- paste(audit_lang, collapse="|")
+# File name expressions that indicate a budget
+audit_lang <- c("Part1-FS", "Part1-Financial_Statements", "Audit_Report.pdf") |> 
+  paste(collapse = "|")
 
 ##################
 #### Run code ####
@@ -196,30 +175,18 @@ pattern <- paste(audit_lang, collapse="|")
 # Set directory from which to make budget data
 directory <- "/Budgets/2022/Bangsamoro"
 
-# Get unzipped directories (every other file)
-places <- list.files(paste0(getwd(), directory), recursive = TRUE) |> 
-  map(\(x) paste0(paste0(directory, "/"), x))
-places <- places[seq_along(places) %% 2 != 0]
-
-# Map over unzipped directories to get budget report file paths (if have zips)
-paths <- places |> 
-  map_df(function(x) {
-    out <- list.files(paste0(getwd(), x)) |> 
-      map_df(\(y) data.frame(path = paste0(paste0(x, "/"), y))) |> 
-        filter(grepl(pattern, path) == TRUE)
-    return(budgets = out)
-  }) |> rbind.data.frame()
-
-# Turn list into data frame (no zip directories)
-paths <- as.data.frame(as.matrix(places))
-
-# Index at which to start reading
-start <- 3
+# Get file paths of budgets in directory
+paths <- list.files(paste0(getwd(), directory), recursive = TRUE) |> 
+  map(\(x) paste0(paste0(directory, "/"), x)) |> 
+  as.matrix() |> 
+  as.data.frame()
+names(paths) <- "path"
+paths <- paths |> filter(grepl(audit_lang, path) == TRUE)
 
 # Create data frame of budget reports
 tictoc::tic()
-budgets <- build(obs = clean(substring(paths[start,], 2)))
-for (i in (start + 1):nrow(paths)) {
+budgets <- NULL
+for (i in 1:nrow(paths)) {
   if(!grepl("zip", paths[i,])) {
     budgets <- build(budgets, obs = clean(substring(paths[i,], 2)))
     }
