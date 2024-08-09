@@ -14,7 +14,7 @@ items <- gsub('^"|"$', '', items)
 repeats <- c("Service and Business Income", "Non-Current Liabilities", "Expenditures",
              "Tax Revenue", "Non-Tax Revenue", "Revenue", "Property, Plant, and Equipment",
              "Non-Current Assets", "Business Income", "Payables", "Receipts from Printing and Publication",
-             "Receipts from business/service income", )
+             "Receipts from business/service income")
 
 # Construct list of col names for budget report df
 cols <- c("lgu", "region", "year", "city") |> 
@@ -55,7 +55,7 @@ read_.pdf <- function(path) {
     pdf_text(path)
   }, error = function(err) {
     message("Error: ", conditionMessage(err))
-    ""
+    return("")
   })
   
   # Combine all text from list into one string
@@ -183,7 +183,7 @@ audit_lang <- c("Part1-FS", "Part1-Financial_Statements", "Audit_Report.pdf") |>
 ##################
 
 # Set directory from which to make budget data
-directory <- "/Budgets/2022/Bicol"
+directory <- "/Budgets/2022/Bangsamoro"
 
 # Get file paths of budgets in directory
 paths <- list.files(paste0(getwd(), directory), recursive = TRUE) |> 
