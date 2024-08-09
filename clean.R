@@ -81,6 +81,24 @@ read_.pdf <- function(path) {
   return(text)
 }
 
+# Read in Word budget report and turn into text
+read_.docx <- function(path) {
+  # Read tables
+  dat <- docx_extract_all_tbls(docxtractr::read_docx(path)) 
+  
+  # Initialize an empty string to store the final result
+  final_str <- ""
+  
+  # Loop through each table and append its content to the final string
+  for (i in 1:length(dat)) {
+    df_str <- capture.output(write.table(dat[i], row.names = FALSE, sep = " ", quote = FALSE))
+    final_str <- paste(final_str, paste(df_str, collapse = "\n"), sep = " ")
+  }
+  
+  # Print the final concatenated string
+  return(final_str)
+}
+
 # Code to initialize region x year specific vars
 initialize <- function(path) {
   lgu <<- gsub("-", " ", str_match(path, "/\\d{4}/[A-Za-z\\s]+/(.*)-Annual-Audit")[2])
@@ -121,7 +139,8 @@ extract_number <- function(text, target_string, regular_exp) {
 clean <- function(path) {
   initialize(path)
   text <- ifelse(grepl(".pdf", path, ignore.case = TRUE), read_.pdf(path),
-                 read_.xlsx(path))
+                 ifelse(grepl(".xlsx|.xls", path, ignore.case = TRUE), read_.xlsx(path),
+                        read_.docx(path)))
   region <- str_match(path, "Budgets/\\d{4}/([A-Za-z\\s]+)/")[2]
   year <- str_match(path, "Budgets/(\\d{4})/")[2]
   city <- ifelse(grepl("city", path, ignore.case = TRUE), 1, 0)
@@ -183,7 +202,7 @@ audit_lang <- c("Part1-FS", "Part1-Financial_Statements", "Audit_Report.pdf") |>
 ##################
 
 # Set directory from which to make budget data
-directory <- "/Budgets/2022/Bangsamoro"
+directory <- "/Budgets/2022/Cagayan Valley"
 
 # Get file paths of budgets in directory
 paths <- list.files(paste0(getwd(), directory), recursive = TRUE) |> 
@@ -191,7 +210,7 @@ paths <- list.files(paste0(getwd(), directory), recursive = TRUE) |>
   as.matrix() |> 
   as.data.frame()
 names(paths) <- "path"
-paths <- paths |> filter(grepl(audit_lang, path) == TRUE)
+paths <- paths |> filter(grepl(audit_lang, path) == TRUE & !grepl("\\$", path))
 
 # Create data frame of budget reports
 tictoc::tic()
