@@ -13,7 +13,8 @@ items <- gsub('^"|"$', '', items)
 # List of budget items with redundant language
 repeats <- c("Service and Business Income", "Non-Current Liabilities", "Expenditures",
              "Tax Revenue", "Non-Tax Revenue", "Revenue", "Property, Plant, and Equipment",
-             "Non-Current Assets")
+             "Non-Current Assets", "Business Income", "Payables", "Receipts from Printing and Publication",
+             "Receipts from business/service income", )
 
 # Construct list of col names for budget report df
 cols <- c("lgu", "region", "year", "city") |> 
@@ -54,13 +55,20 @@ read_.pdf <- function(path) {
     pdf_text(path)
   }, error = function(err) {
     message("Error: ", conditionMessage(err))
-    return("")
+    ""
   })
   
   # Combine all text from list into one string
   text <- ""
   for(i in 1:length(pages)) {
     text <- paste(text, pages[i])
+  }
+  
+  # If that doesn't work, try OCR
+  if(grepl("^\\s*$", text)) {
+    text <- sapply(1:pdf_info(path)$pages,
+           \(x) ocr(image_read(pdf_render_page(path, page = x, dpi = 600)))) |> 
+      paste(collapse = "\n")
   }
   
   # Clean text
@@ -75,18 +83,20 @@ read_.pdf <- function(path) {
 
 # Code to initialize region x year specific vars
 initialize <- function(path) {
+  lgu <<- gsub("-", " ", str_match(path, "/\\d{4}/[A-Za-z\\s]+/(.*)-Annual-Audit")[2])
   if(grepl("NCR", path) & grepl("2022", path)) {
-    lgu <<- gsub("-", " ", str_match(path, "/\\d{4}/[A-Za-z\\s]+/(.*)-Annual-Audit")[2])
     regular_exp <<- ".*?\\(?([0-9]{4,}(?:,[0-9]{3})*(?:\\.[0-9]+)?)\\)?(?=\\s)"
   }
   if(grepl("Bangsamoro", path) & grepl("2022", path)) {
     lgu <<- gsub("[-_]", "", str_match(path, "/\\d{4}/[A-Za-z\\s]+/-?(.*)2022")[2])
     regular_exp <<- "(?:(?![a-zA-Z]{3}).)*?\\(?([0-9,]+\\.[0-9]{2})\\)?\\s"
-    #regular_exp <<- "(?:(?![a-zA-Z]{3}).)*?\\(?([0-9,]+\\.[0-9]{2})\\)?\\s"
     if(is.na(lgu)) {
       lgu <<- gsub("[-_]", "", str_match(path, "/\\d{4}/[A-Za-z\\s]+/-?(.*)Audit_Report.pdf"))
     }
     lgu <<- gsub("([^A-Z])([A-Z])", "\\1 \\2", lgu)
+  }
+  if(grepl("Bicol", path) & grepl("2022", path)) {
+    regular_exp <<- "(?:(?![=a-zA-Z]{3}).)*?\\(?([0-9,]+\\.[0-9]{2})\\)?[Pp\\|\\s]"
   }
 }
 
@@ -173,7 +183,7 @@ audit_lang <- c("Part1-FS", "Part1-Financial_Statements", "Audit_Report.pdf") |>
 ##################
 
 # Set directory from which to make budget data
-directory <- "/Budgets/2022/Bangsamoro"
+directory <- "/Budgets/2022/Bicol"
 
 # Get file paths of budgets in directory
 paths <- list.files(paste0(getwd(), directory), recursive = TRUE) |> 
@@ -192,4 +202,3 @@ for (i in 1:nrow(paths)) {
     }
   }
 tictoc::toc()
-
