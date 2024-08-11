@@ -7,14 +7,14 @@
 source("packages.R")
 
 # Read in list of budget items to look up in data
-items <- readLines("items.csv")
+items <- readLines("items.csv") |> unique()
 items <- gsub('^"|"$', '', items)
 
 # List of budget items with redundant language
 repeats <- c("Service and Business Income", "Non-Current Liabilities", "Expenditures",
              "Tax Revenue", "Non-Tax Revenue", "Revenue", "Property, Plant, and Equipment",
              "Non-Current Assets", "Business Income", "Payables", "Receipts from Printing and Publication",
-             "Receipts from business/service income")
+             "Receipts from business/service income", "Current Liabilities")
 
 # Construct list of col names for budget report df
 cols <- c("lgu", "region", "year", "city") |> 
@@ -67,7 +67,7 @@ read_.pdf <- function(path) {
   # If that doesn't work, try OCR
   if(grepl("^\\s*$", text)) {
     text <- sapply(1:pdf_info(path)$pages,
-           \(x) ocr(image_read(pdf_render_page(path, page = x, dpi = 600)))) |> 
+           \(x) ocr(image_read(pdf_render_page(path, page = x, dpi = 300)))) |> 
       paste(collapse = "\n")
   }
   
@@ -102,12 +102,14 @@ read_.docx <- function(path) {
 # Code to initialize region x year specific vars
 initialize <- function(path) {
   lgu <<- gsub("-", " ", str_match(path, "/\\d{4}/[A-Za-z\\s]+/(.*)-Annual-Audit")[2])
-  if(grepl("NCR", path) & grepl("2022", path)) {
-    regular_exp <<- ".*?\\(?([0-9]{4,}(?:,[0-9]{3})*(?:\\.[0-9]+)?)\\)?(?=\\s)"
+  if(grepl(".xlsx|.xls", path)) {
+    regular_exp <<- regular_exp <<- ".*?\\(?([0-9]{4,}(?:,[0-9]{3})*(?:\\.[0-9]+)?)\\)?(?=\\s)"
+  }
+  if(grepl(".pdf|.docx", path)) {
+    regular_exp <<- regular_exp <<- "(?:(?![a-zA-Z]{3}).)*?\\(?([0-9,]+\\.[0-9]{2})\\)?\\s"
   }
   if(grepl("Bangsamoro", path) & grepl("2022", path)) {
     lgu <<- gsub("[-_]", "", str_match(path, "/\\d{4}/[A-Za-z\\s]+/-?(.*)2022")[2])
-    regular_exp <<- "(?:(?![a-zA-Z]{3}).)*?\\(?([0-9,]+\\.[0-9]{2})\\)?\\s"
     if(is.na(lgu)) {
       lgu <<- gsub("[-_]", "", str_match(path, "/\\d{4}/[A-Za-z\\s]+/-?(.*)Audit_Report.pdf"))
     }
@@ -115,6 +117,13 @@ initialize <- function(path) {
   }
   if(grepl("Bicol", path) & grepl("2022", path)) {
     regular_exp <<- "(?:(?![=a-zA-Z]{3}).)*?\\(?([0-9,]+\\.[0-9]{2})\\)?[Pp\\|\\s]"
+  }
+  if(grepl("Calabarzon", path) & grepl("2022", path)) {
+    lgu <<- gsub("[-_]", "", str_match(path, "/\\d{4}/[A-Za-z\\s]+/-?(.*)2022")[2])
+    if(is.na(lgu)) {
+      lgu <<- gsub("[-_]", "", str_match(path, "/\\d{4}/[A-Za-z\\s]+/-?(.*)Audit_Report.pdf"))
+    }
+    lgu <<- gsub("([^A-Z])([A-Z])", "\\1 \\2", lgu)
   }
 }
 
@@ -202,7 +211,7 @@ audit_lang <- c("Part1-FS", "Part1-Financial_Statements", "Audit_Report.pdf") |>
 ##################
 
 # Set directory from which to make budget data
-directory <- "/Budgets/2022/Cagayan Valley"
+directory <- "/Budgets/2022/Calabarzon"
 
 # Get file paths of budgets in directory
 paths <- list.files(paste0(getwd(), directory), recursive = TRUE) |> 
@@ -214,7 +223,7 @@ paths <- paths |> filter(grepl(audit_lang, path) == TRUE & !grepl("\\$", path))
 
 # Create data frame of budget reports
 tictoc::tic()
-budgets <- NULL
+#budgets <- NULL
 for (i in 1:nrow(paths)) {
   if(!grepl("zip", paths[i,])) {
     budgets <- build(budgets, obs = clean(substring(paths[i,], 2)))
