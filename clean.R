@@ -7,7 +7,7 @@
 source("packages.R")
 
 # Read in list of budget items to look up in data
-items <- readLines("items.csv") |> unique()
+items <- readLines("items.csv")
 items <- gsub('^"|"$', '', items)
 
 # List of budget items with redundant language
@@ -206,27 +206,35 @@ build <- function(df = NULL, obs) {
 audit_lang <- c("Part1-FS", "Part1-Financial_Statements", "Audit_Report.pdf") |> 
   paste(collapse = "|")
 
+# Take directory and optional df of existing data and return data frame of budget reports
+make_data <- function(dir, df = NULL) {
+  # Get file paths of budgets in directory
+  paths <- list.files(paste0(getwd(), dir), recursive = TRUE) |> 
+    map(\(x) paste0(paste0(dir, "/"), x)) |> 
+    as.matrix() |> 
+    as.data.frame()
+  names(paths) <- "path"
+  paths <- paths |> filter(grepl(audit_lang, path) == TRUE & !grepl("\\$", path))
+  
+  # Create data frame of budget reports
+  res <- df
+  for (i in 1:nrow(paths)) {
+    if(!grepl("zip", paths[i,])) {
+      res <- build(res, obs = clean(substring(paths[i,], 2)))
+    }
+  }
+  
+  return(res)
+}
+
 ##################
 #### Run code ####
 ##################
 
 # Set directory from which to make budget data
-directory <- "/Budgets/2022/Calabarzon"
-
-# Get file paths of budgets in directory
-paths <- list.files(paste0(getwd(), directory), recursive = TRUE) |> 
-  map(\(x) paste0(paste0(directory, "/"), x)) |> 
-  as.matrix() |> 
-  as.data.frame()
-names(paths) <- "path"
-paths <- paths |> filter(grepl(audit_lang, path) == TRUE & !grepl("\\$", path))
+directory <- "/Budgets/2022/Central Luzon"
 
 # Create data frame of budget reports
 tictoc::tic()
-#budgets <- NULL
-for (i in 1:nrow(paths)) {
-  if(!grepl("zip", paths[i,])) {
-    budgets <- build(budgets, obs = clean(substring(paths[i,], 2)))
-    }
-  }
+new <- make_data(directory)
 tictoc::toc()
