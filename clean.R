@@ -203,7 +203,8 @@ build <- function(df = NULL, obs) {
 }
 
 # File name expressions that indicate a budget
-audit_lang <- c("Part1-FS", "Part1-Financial_Statements", "Audit_Report.pdf") |> 
+audit_lang <- c("Part1-FS", "Part1-Financial_Statements", "Audit_Report.pdf",
+                "Audit_Report.docx") |> 
   paste(collapse = "|")
 
 # Take directory and optional df of existing data and return data frame of budget reports
@@ -232,7 +233,7 @@ make_data <- function(dir, df = NULL) {
 ##################
 
 # Set directory from which to make budget data
-directory <- "/Budgets/2022/Central Luzon"
+directory <- "/Budgets/2022/Central Visayas"
 
 # Create data frame of budget reports
 tictoc::tic()
