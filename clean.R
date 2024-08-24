@@ -7,7 +7,7 @@
 source("packages.R")
 
 # Read in list of budget items to look up in data
-items <- readLines("items.csv")
+items <- readLines("items_2013.csv")
 items <- gsub('^"|"$', '', items)
 
 # List of budget items with redundant language
@@ -31,7 +31,20 @@ cols <- c("lgu", "region", "year", "city") |>
 # Read in excel budget report and turn into text
 read_.xlsx <- function(path) {
   # Get the names of all sheets
-  sheet_names <- excel_sheets(path)
+  sheet_names <- tryCatch(
+    {
+      read_sheets(path)
+    },
+    error = function(e) {
+      # Return an empty string if an error occurs
+      return("")
+    })
+  
+  # End function if threw an error
+  if (sheet_names == "") {
+    return("")
+  }
+
   
   # Initialize an empty string to store the final result
   final_str <- ""
@@ -189,6 +202,15 @@ build <- function(df = NULL, obs) {
       }
     }
   } else {
+    # If municipality name already in df, add to same row
+    if(obs$lgu %in% df$lgu && is.na(obs$lgu) == FALSE) {
+      i <- which(df == obs$lgu)
+      for (name in names(df)) {
+        if(is.null(df[[name]][i]) == FALSE && is.na(df[[name]][i]) == TRUE) {
+          df[[name]][i] <- obs[[name]]
+        }
+      }
+    } else {
       # If municipality name not already in df, add to new row
       new_row <- data.frame(matrix(ncol = length(cols), nrow = 1))
       names(new_row) <- cols
@@ -199,12 +221,15 @@ build <- function(df = NULL, obs) {
       }
       df <- rbind(df, new_row)
     } 
+  }
+  
   return(df)
 }
 
 # File name expressions that indicate a budget
-audit_lang <- c("Part1-FS", "Part1-Financial_Statements", "Audit_Report.pdf",
-                "Audit_Report.docx") |> 
+audit_lang <- c("Part1-FS", "Financial_Statements", "Audit_Report.pdf", "FS.pdf",
+                "Audit_Report.docx", "Part1-Audited_FS", "FS.xlsx", "Audit_Report.doc",
+                "FS.doc") |> 
   paste(collapse = "|")
 
 # Take directory and optional df of existing data and return data frame of budget reports
@@ -221,6 +246,7 @@ make_data <- function(dir, df = NULL) {
   res <- df
   for (i in 1:nrow(paths)) {
     if(!grepl("zip", paths[i,])) {
+      print(paths[i,])
       res <- build(res, obs = clean(substring(paths[i,], 2)))
     }
   }
@@ -233,9 +259,12 @@ make_data <- function(dir, df = NULL) {
 ##################
 
 # Set directory from which to make budget data
-directory <- "/Budgets/2022/Central Visayas"
+directory <- "/Budgets/2013/Central Luzon"
 
 # Create data frame of budget reports
 tictoc::tic()
-new <- make_data(directory)
+central_luzon <- make_data(directory)
 tictoc::toc()
+
+# Bind to existing budgets
+budgets <- rbind(budgets, central_luzon)
