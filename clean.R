@@ -108,6 +108,30 @@ read_.docx <- function(path) {
     final_str <- paste(final_str, paste(df_str, collapse = "\n"), sep = " ")
   }
   
+  # If that doesn't work, convert to PDF and try OCR
+  #if(grepl("^\\s*$", final_str)) {
+    # Define temp output directory for PDF conversion
+    output_dir <- "."
+    
+    # Full path to the LibreOffice executable
+    libreoffice_path <- "/Applications/LibreOffice.app/Contents/MacOS/soffice"
+    
+    # Construct the system command
+    cmd <- sprintf('%s --headless --convert-to pdf "%s" --outdir "%s"', libreoffice_path, path, output_dir)
+    
+    # Execute the command
+    system(cmd, wait = TRUE)
+    
+    # Apply OCR
+    temp_path <- gsub(".doc|.docx", ".pdf", gsub(".*/", "", path))
+    final_str <- sapply(1:pdf_info(temp_path)$pages,
+                   \(x) ocr(image_read(pdf_render_page(temp_path, page = x, dpi = 300)))) |> 
+      paste(collapse = "\n")
+    
+    # Clean up and delete temp file
+    file.remove(temp_path)
+  #}
+  
   # Print the final concatenated string
   return(final_str)
 }
@@ -229,7 +253,7 @@ build <- function(df = NULL, obs) {
 # File name expressions that indicate a budget
 audit_lang <- c("Part1-FS", "Financial_Statements", "Audit_Report.pdf", "FS.pdf",
                 "Audit_Report.docx", "Part1-Audited_FS", "FS.xlsx", "Audit_Report.doc",
-                "FS.doc") |> 
+                "FS.doc", "Notes_to_FS") |> 
   paste(collapse = "|")
 
 # Take directory and optional df of existing data and return data frame of budget reports
@@ -259,12 +283,9 @@ make_data <- function(dir, df = NULL) {
 ##################
 
 # Set directory from which to make budget data
-directory <- "/Budgets/2013/Central Luzon"
+directory <- "/KALAHI/Budgets"
 
 # Create data frame of budget reports
 tictoc::tic()
-central_luzon <- make_data(directory)
+new <- make_data(directory)
 tictoc::toc()
-
-# Bind to existing budgets
-budgets <- rbind(budgets, central_luzon)
