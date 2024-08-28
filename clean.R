@@ -78,7 +78,7 @@ read_.pdf <- function(path) {
   }
   
   # If that doesn't work, try OCR
-  if(grepl("^\\s*$", text)) {
+  if(nchar(text) < 2500) {
     text <- sapply(1:pdf_info(path)$pages,
            \(x) ocr(image_read(pdf_render_page(path, page = x, dpi = 300)))) |> 
       paste(collapse = "\n")
@@ -88,7 +88,7 @@ read_.pdf <- function(path) {
   text <- gsub("\n", " ", text)
   text <- gsub("[()]", "", text)
   text <- gsub("\\s+", " ", text)
-  text <- gsub("2022|2021", "", text)
+  text <- gsub("2022|2021|Special Education Fund|General Fund|Trust Fund", "", text)
   text <- trimws(text)
   
   return(text)
@@ -142,7 +142,7 @@ initialize <- function(path) {
   if(grepl(".xlsx|.xls", path)) {
     regular_exp <<- regular_exp <<- ".*?\\(?([0-9]{4,}(?:,[0-9]{3})*(?:\\.[0-9]+)?)\\)?(?=\\s)"
   }
-  if(grepl(".pdf|.docx", path)) {
+  if(grepl(".pdf|.docx|.doc", path)) {
     regular_exp <<- regular_exp <<- "(?:(?![a-zA-Z]{3}).)*?\\(?([0-9,]+\\.[0-9]{2})\\)?\\s"
   }
   if(grepl("Bangsamoro", path) & grepl("2022", path)) {
@@ -161,6 +161,9 @@ initialize <- function(path) {
       lgu <<- gsub("[-_]", "", str_match(path, "/\\d{4}/[A-Za-z\\s]+/-?(.*)Audit_Report.pdf"))
     }
     lgu <<- gsub("([^A-Z])([A-Z])", "\\1 \\2", lgu)
+  }
+  if(grepl("2013|2014", path) & is.na(lgu)) {
+    lgu <<- str_match(path, "/\\d{4}/[A-Za-z\\s]+/(.*)20")[2]
   }
 }
 
@@ -253,7 +256,7 @@ build <- function(df = NULL, obs) {
 # File name expressions that indicate a budget
 audit_lang <- c("Part1-FS", "Financial_Statements", "Audit_Report.pdf", "FS.pdf",
                 "Audit_Report.docx", "Part1-Audited_FS", "FS.xlsx", "Audit_Report.doc",
-                "FS.doc", "Notes_to_FS") |> 
+                "FS.doc", "Notes_to_FS", "Observations_and_Recommendations") |> 
   paste(collapse = "|")
 
 # Take directory and optional df of existing data and return data frame of budget reports
@@ -283,9 +286,9 @@ make_data <- function(dir, df = NULL) {
 ##################
 
 # Set directory from which to make budget data
-directory <- "/KALAHI/Budgets"
+directory <- "/KALAHI/Budgets/2014/Zamboanga"
 
 # Create data frame of budget reports
 tictoc::tic()
-new <- make_data(directory)
+zamboanga_2014 <- make_data(directory)
 tictoc::toc()
