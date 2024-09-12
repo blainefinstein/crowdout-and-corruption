@@ -273,8 +273,14 @@ make_data <- function(dir, df = NULL) {
   res <- df
   for (i in 1:nrow(paths)) {
     if(!grepl("zip", paths[i,])) {
-      print(paths[i,])
-      res <- build(res, obs = clean(substring(paths[i,], 2)))
+      # Return null if observation throws an error
+      tryCatch({
+        res <- build(res, obs = clean(substring(paths[i,], 2)))
+        print(paths[i,])},
+        error = function(e) {
+          print("ERROR!!!! ERROR!!!! Didn't process: ")
+          print(paths[i,])
+        })
     }
   }
   
@@ -286,9 +292,9 @@ make_data <- function(dir, df = NULL) {
 ##################
 
 # Set directory from which to make budget data
-directory <- "/KALAHI/Budgets/2014/Zamboanga"
+directory <- "/Budgets/2013/Eastern Visayas"
 
 # Create data frame of budget reports
 tictoc::tic()
-zamboanga_2014 <- make_data(directory)
+eastvisayas_2013 <- make_data(directory)
 tictoc::toc()
