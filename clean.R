@@ -17,7 +17,7 @@ repeats <- c("Service and Business Income", "Non-Current Liabilities", "Expendit
              "Receipts from business/service income", "Current Liabilities")
 
 # Construct list of col names for budget report df
-cols <- c("lgu", "region", "year", "city") |> 
+cols <- c("lgu", "region", "year", "city", "audit_length", "num_recommendations") |> 
   append(items) |>
   sapply(function(x) {
     x <- tolower(x)                      # Convert to lower case
@@ -184,12 +184,29 @@ extract_number <- function(text, target_string, regular_exp) {
   return(as.numeric(gsub(",", "", number)))
 }
 
+# Count number of words in text for audit analysis
+count_words <- function(text) {
+  words <- strsplit(text, "\\s+")[[1]]
+  words <- words[words != ""]
+  return(length(words))
+}
+
+# File name expressions that indicate a budget
+audit_lang <- c("Audited_FS", "Audit_Report", "Observations_and_Recommendation",
+                "Findings_and_Recommendation") |> 
+  paste(collapse = "|")
+
 # Read in one budget report file and return observation
 clean <- function(path) {
   initialize(path)
   text <- ifelse(grepl(".pdf", path, ignore.case = TRUE), read_.pdf(path),
                  ifelse(grepl(".xlsx|.xls", path, ignore.case = TRUE), read_.xlsx(path),
                         read_.docx(path)))
+  audit_length <- ifelse(grepl(audit_lang, path), count_words(text), NA)
+  num_recommendations <- ifelse(grepl(audit_lang, path),
+                                sum(attr(gregexpr("\\brecommend(ation)?\\b", text,
+                                                  ignore.case = TRUE)[[1]], "match.length") > 0),
+                                NA)
   region <- str_match(path, "Budgets/\\d{4}/([A-Za-z\\s]+)/")[2]
   year <- str_match(path, "Budgets/(\\d{4})/")[2]
   city <- ifelse(grepl("city", path, ignore.case = TRUE), 1, 0)
@@ -197,7 +214,9 @@ clean <- function(path) {
     lgu = lgu,
     region = region,
     year = year,
-    city = city
+    city = city,
+    audit_length = audit_length,
+    num_recommendations = num_recommendations
   )
   
   # Loop over line items and build observation out of budget report
@@ -230,7 +249,7 @@ build <- function(df = NULL, obs) {
     }
   } else {
     # If municipality name already in df, add to same row
-    if(obs$lgu %in% df$lgu && is.na(obs$lgu) == FALSE) {
+    if(obs$lgu %in% df$lgu && obs$region %in% df$region && is.na(obs$lgu) == FALSE) {
       i <- which(df == obs$lgu)
       for (name in names(df)) {
         if(is.null(df[[name]][i]) == FALSE && is.na(df[[name]][i]) == TRUE) {
@@ -254,7 +273,7 @@ build <- function(df = NULL, obs) {
 }
 
 # File name expressions that indicate a budget
-audit_lang <- c("Part1-FS", "Financial_Statements", "Audit_Report.pdf", "FS.pdf",
+budget_lang <- c("Part1-FS", "Financial_Statements", "Audit_Report.pdf", "FS.pdf",
                 "Audit_Report.docx", "Part1-Audited_FS", "FS.xlsx", "Audit_Report.doc",
                 "FS.doc", "Notes_to_FS", "Observations_and_Recommendations") |> 
   paste(collapse = "|")
@@ -267,7 +286,7 @@ make_data <- function(dir, df = NULL) {
     as.matrix() |> 
     as.data.frame()
   names(paths) <- "path"
-  paths <- paths |> filter(grepl(audit_lang, path) == TRUE & !grepl("\\$", path))
+  paths <- paths |> filter(grepl(budget_lang, path) == TRUE & !grepl("\\$", path))
   
   # Create data frame of budget reports
   res <- df
@@ -292,9 +311,9 @@ make_data <- function(dir, df = NULL) {
 ##################
 
 # Set directory from which to make budget data
-directory <- "/Budgets/2013/Eastern Visayas"
+directory <- "/KALAHI/Budgets/2013"
 
 # Create data frame of budget reports
 tictoc::tic()
-eastvisayas_2013 <- make_data(directory)
+kalahi_2013 <- make_data(directory)
 tictoc::toc()
