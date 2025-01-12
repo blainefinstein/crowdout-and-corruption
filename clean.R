@@ -311,7 +311,7 @@ make_data <- function(dir, df = NULL) {
 ##################
 
 # Set directory from which to make budget data
-directory <- "/KALAHI/Budgets/2013"
+directory <- "/Data/KALAHI/Budgets/2015"
 
 # Create data frame of budget reports
 tictoc::tic()
