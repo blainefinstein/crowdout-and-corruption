@@ -1,0 +1,349 @@
+---
+title: Exposing Development Gaps with Causal Forest
+author:
+  - name: Blaine Finstein
+affiliation:
+    address: Department of Political Science, UCLA
+column_numbers: 3
+output: 
+  posterdown::posterdown_html:
+    css: "css.css"
+    self_contained: false
+    pandoc_args: --mathjax
+    highlight: espresso
+    number_sections: false
+knit: pagedown::chrome_print
+---
+
+```{r, message = F, warning = F, output = F, echo = F, include = F}
+
+# Load packages
+packages <- c("tidyverse", "purrr", "ggplot2", "gt", "readxl", "haven", "mice", "grf", "patchwork", "posterdown",
+              "dotwhisker", "estimatr", "broom")
+lapply(packages, library, character.only = TRUE)
+
+# Load matching variables for household surveys
+interim_details <- read_dta("Data/KALAHI/Endline Public Use Data Package/Datasets/Interim Details on Full Sample 198 Sample v5.dta")
+
+# Create list of municipalities that experienced extensive Yolanda damage
+yolanda <- c("Gumaca", "Lopez", "General Nakar", "Tagkawayan", "Mauban", "San Antonio", "Real",
+             "Alabat", "General Luna", "Padre Burgos", "Quezon", "Agdangan", "Montevista",
+             "Pantukan")
+
+# Merge with covariates
+analysis_match <- read_csv("Data/KALAHI/PHL-KC Matching Data for Sample/matching data for sample.csv") |>
+  rename(region = reg_psgc) |> 
+  dplyr::select(-c(island)) |> 
+  mutate(yolanda = ifelse(mun %in% yolanda, 1, 0)) |> 
+  left_join(interim_details[,-4], by = c("pairnum", "treatment")) |> 
+  rename(treat = treatment) |> 
+  dplyr::select(-c(treatmen))
+
+# Read in human welfare data, merge with municipal covariates, and clean
+hardship <-
+  read_dta("Data/KALAHI/Endline Public Use Data Package/Datasets/3rdRnd_H8_Hardship_HH_AnalysisVarsB.dta") |>
+  left_join(analysis_match, by = c("lk4")) |> 
+  dplyr::select(!matches("\\.x|\\.y")) |> 
+  mutate(across(de1_death:DE5_96B, \(x) ifelse(x == -95, NA, x))) |>  # Recode missing vals to NA
+  mutate(assistance = rowSums(across(c(de6_death_finass_a, de6_ill_finass_a, de6_job_finass_a, de6_calam_finass_a,
+           de6_noharv_finass_a, de6_van_finass_a)), na.rm = T),
+         asked_lgu = ifelse((de4_death_helpLguOff == 1) | (de4_illness_helpLguOff == 1) | (de4_jobless_helpLguOff == 1)
+                            | (de4_calamity_helpLguOff) == 1 | (de4_noharvest_helpLguOff) == 1 |
+                              (de4_vandal_helpLguOff) == 1, 1, 0))
+
+# Fishing
+fish <-
+  read_dta("Data/KALAHI/Endline Public Use Data Package/Datasets/3rdRnd_Hypothesis_1c_FA_HH_AnalysisVarsA.dta") |> 
+  left_join(analysis_match, by = "lk4") |> 
+  dplyr::select(!matches("\\.x|\\.y")) |> 
+  mutate(across(fish1:fyp4p_5, \(x) ifelse(x == -95, NA, x))) |>
+  mutate(qty_fish_sold = rowSums(across(matches("fyp4a_[1-9]")), na.rm = T),
+         price_fish_sold = rowSums(across(matches("fyp4d_[1-9]")), na.rm = T),
+         qty_aquaculture_sold = rowSums(across(matches("fyp4q_[1-9]")), na.rm = T),
+         price_aquaculture_sold = rowSums(across(matches("fyp4p_[1-9]")), na.rm = T))
+
+# Agriculture
+agri <-
+  read_dta("Data/KALAHI/Endline Public Use Data Package/Datasets/3rdRnd_Hypothesis_1c_Agri_HH_AnalysisVarsA.dta") |> 
+  left_join(analysis_match, by = c("lk4")) |> 
+  dplyr::select(!matches("\\.x|\\.y")) |> 
+  mutate(across(crop1:ag18a_d22, \(x) ifelse(x == -95, NA, x))) |>
+  mutate(area_planted = rowSums(across(matches("ag17a_[1-9]|ag6s_[1-9]|ag17h")), na.rm = T),
+         qty_harvest = rowSums(across(matches("ag18a|ag7a")), na.rm = T),
+         qty_harvest_sold = rowSums(across(matches("ag19a1_[1-9]")), na.rm = T))
+
+# Employment
+labor <- read_dta("Data/KALAHI/Endline Public Use Data Package/Datasets/3rdRnd_LT2_Labor_HH-AnalysisVarsB.dta") |> 
+  left_join(analysis_match, by = c("lk4")) |> 
+  dplyr::select(!matches("\\.x|\\.y")) |> 
+  mutate(across(lm2:lm13, \(x) ifelse(x == -95, NA, x))) |> 
+  rename(income = lm9, work_hrs = lm11, hrs_worked_last_wk = lm13, sex = rid9_sex)
+
+# Spending
+spending <- read_dta("Data/KALAHI/Endline Public Use Data Package/Datasets/3rdRnd_LT1_AnalysisVarsB.dta") |> 
+  left_join(analysis_match, by = c("lk4")) |> 
+  dplyr::select(!matches("\\.x|\\.y")) |> 
+  mutate(across(fuel1:tobacco_2, \(x) ifelse(x == -95, NA, x))) |>
+  mutate(household_spending = rowSums(across(matches("1$")), na.rm = T),
+         household_produce = rowSums(across(matches("2$")), na.rm = T))
+
+# Education (Null effects)
+edu <- read_dta("Data/KALAHI/Endline Public Use Data Package/Datasets/3rdRnd_Hypothesis_1e_AnalysisVarsB.dta") |> 
+  left_join(analysis_match, by = c("lk4")) |> 
+  dplyr::select(!matches("\\.x|\\.y")) |> 
+  mutate(num_teachers = rowSums(across(matches("teacher")), na.rm = T),
+         num_schools = rowSums(across(c(edf_public_elem, edf_public_sec)), na.rm = T),
+         enrollment = rowSums(across(matches("enrolled")), na.rm = T))
+
+# Infrastructure (reverse direction?)
+infra <- read_dta("Data/KALAHI/Endline Public Use Data Package/Datasets/3rdRnd_Hypothesis_1a_AnalysisVarsA.dta") |> 
+  left_join(analysis_match, by = c("lk4")) |> 
+  dplyr::select(!matches("\\.x|\\.y")) |> 
+  mutate(dist_pub_services = rowSums(across(matches("acs1_m")), na.rm = T),
+         travel_time = rowSums(across(matches("acs3")), na.rm = T),
+         travel_cost = rowSums(across(matches("acs4")), na.rm = T))
+infra2 <- read_dta("Data/KALAHI/Endline Public Use Data Package/Datasets/3rdRnd_Hypothesis_1b-AnalysisVarsA.dta") |> 
+  left_join(analysis_match, by = c("lk4")) |> 
+  dplyr::select(!matches("\\.x|\\.y"))
+
+# Household
+housing <- read_dta("Data/KALAHI/Endline Public Use Data Package/Datasets/3rdRnd_LT1_AnalysisVarsC.dta") |> 
+  left_join(analysis_match, by = c("lk4")) |> 
+  dplyr::select(!matches("\\.x|\\.y")) |> 
+  rename(floor_area = ham4_m, num_rooms = ham5, elec = ham7) |> 
+  mutate(elec = as.numeric(elec), floor_area = as.numeric(floor_area))
+
+# Set seed for reproducibility
+set.seed(214)
+
+# Initialize empty data frame in which to store var importance
+imp <- data.frame(outcome = character(), pi = numeric(), pop07nso = numeric(), land = numeric(), yolanda = numeric(),
+                  sex = numeric(), non_complier = numeric())
+
+# Take: data, vec of outcomes, and vec of covariates; return: CATEs for each outcome w/ covariates
+get_cate <- function(data, Y, X) {
+  # Impute missing values
+  res <- data |>
+    dplyr::select(append(Y, append(X, "treat"))) |> 
+    mice(method = "rf", seed = 214) |> 
+    complete()
+  
+  # Loop over outcomes: standardize, fit causal forest, and add CATEs to res
+  for (y in Y) {
+    standard <- (res[[y]] - mean(res[[y]])) / sd(res[[y]])
+    mod <- causal_forest(dplyr::select(res, X), standard, res$treat)
+    var_name <- paste0("cate_", y)
+    res[[var_name]] <- predict(mod)$predictions
+    
+    # Store variable importance in global data frame
+    vimp <- c(gsub("cate_", "", var_name), map_vec(names(imp)[2:length(imp)],
+                      \(x) ifelse(x %in% X, variable_importance(mod)[which(X == x)], NA)))
+    vimp <- as.data.frame(as.list(vimp))
+    names(vimp) <- names(imp)
+    imp <<- imp |> rbind(vimp)
+  }
+  
+  return(res)
+}
+
+# Full and partial covariate sets from which to fit causal forests
+full_covariates <- c("pi", "pop07nso", "land", "yolanda", "sex", "non_complier")
+partial_covariates <- c("pi", "pop07nso", "land", "yolanda", "non_complier")
+
+# Fit causal forests and get CATEs for key outcomes
+cate_labor <- get_cate(labor, c("income", "work_hrs"), full_covariates)
+cate_spending <- get_cate(spending, "household_spending", partial_covariates)
+cate_hardship <- get_cate(hardship, "assistance", partial_covariates)
+cate_infrastructure <- get_cate(infra, c("dist_pub_services", "travel_time", "travel_cost"), partial_covariates)
+cate_agriculture <- get_cate(agri, c("area_planted", "qty_harvest", "qty_harvest_sold"), partial_covariates)
+cate_education <- get_cate(edu, c("num_teachers", "num_schools", "enrollment"), partial_covariates)
+cate_fishing <- get_cate(fish, c("qty_fish_sold", "price_fish_sold", "qty_aquaculture_sold",
+                                   "price_aquaculture_sold"), partial_covariates)
+cate_housing <- get_cate(housing, c("elec", "floor_area"), partial_covariates)
+
+# Take: get_cate output; return: pretty plot of CATEs over poverty index
+make_plot <- function(data) {
+  data |> 
+  dplyr::select(matches("cate|pi")) |> 
+  pivot_longer(cols = -pi, names_to = "outcome", values_to = "CATE") |> 
+  mutate(outcome = gsub("_", " ", gsub("cate_", "", outcome))) |> 
+  ggplot(aes(x = pi, y = CATE, color = outcome)) +
+  geom_smooth(method = "lm") +
+  ylim(-2, 2) +
+  labs(title = str_to_title(gsub("cate_", "", deparse(substitute(data)))), x = "Poverty index", y = "", color = "") +
+  guides(alpha = "none") +
+  theme_minimal()
+}
+
+make_plot_data <- function(data) {
+  data |> 
+  dplyr::select(matches("cate|pi")) |> 
+  pivot_longer(cols = -pi, names_to = "outcome", values_to = "CATE") |> 
+  mutate(outcome = gsub("_", " ", gsub("cate_", "", outcome)))
+}
+```
+
+# Motivation and Empirical Context
+
+* Development programs often induce surprising heterogeneous effects which theory cannot always predict ex ante
+
+* Rich covariate data often available in impact evaluations
+
+* Emerging methods in ML for causal inference allow for flexible non-parametric estimation of treatment effects across the covariate space. Can they identify heterogeneity from a foreign aid program to improve impact evaluation and targeting?
+
+* I fit causal forests (Wager and Athey 2018) on a variety of human development outcomes from a randomized evaluation of a foreign aid program in the Philippines
+
+* Grants assigned to municipalities for small-scale development projects. Projects addressed a variety of sectors but mainly focused on infrastructure, education, and health
+
+![](kalahi_logo.png){width=600px .centered}
+
+# ML and Causal Inference
+
+* Causal forest allows us to estimate the Conditional Average Treatment Effect (CATE) for each unit. This estimates the treatment effect conditional on a given unit's covariates
+
+* Does this by finding treatment and control units at similar locations in the covariate space with which to construct counterfactuals weighted by proximity. The estimator is presented below
+
+$$
+\hat{\tau}(X_i) = \sum_{j=1}^n \alpha_j(X_i) \cdot (Y_j^{(1)} - Y_j^{(0)})
+$$
+
+* Does not allow us to circumvent the fundamental problem of causal inference, but does afford a powerful means of exploring treatment effect heterogeneity that can (potentially) offer more information than a simple average treatment effect (ATE)
+
+* I compare the ATE to the CATE distribution for one particular outcome from Kalahi-CIDSS - household income. While the ATE is statistically insignificant, there appears to be quite a bit of variation in conditional average treatment effects
+
+* Aggregate measure such as an ATE can lead researchers to conclude that Kalahi failed to achieve development goals when it did impact certain subpopulations. Learning where in the covariate space there was the largest effect can help to target future aid programs
+
+```{r, include = F, message = F, warning = F, output = F, echo = F}
+# Executable code not to be outputted in poster
+
+# Impute missing values
+labor_standardized <- labor |>
+    dplyr::select(append("income", append(full_covariates, "treat"))) |> 
+    mice(method = "rf", seed = 214) |> 
+    complete() |> 
+  mutate(income = (income - mean(income)) / sd(income)) |> 
+  cbind(bgytot = labor$bgytot, mun = labor$mun, non_complier = labor$non_complier)
+
+# Create plots for point estimate and CATE distribution
+pt_est <- lm_robust(income ~ treat + pi + bgytot + pop07nso + land + sex + non_complier + as.factor(mun) + yolanda,
+                   data = labor_standardized) |> 
+  broom::tidy(conf.int = TRUE) |> 
+  filter(term == "treat") |> 
+  mutate(term = "") |> 
+  dwplot() +
+  labs(y = "") +
+  xlim(-5, 5) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+cate_dist <- cate_labor |> 
+  ggplot(aes(x = cate_income)) +
+  xlim(-5, 5) +
+  theme_minimal() +
+  labs(y = "", x = "") +
+  geom_density(color = "red")
+```
+
+```{r, message = F, warning = F, echo = F, fig.width = 13, fig.height = 10, fig.align = 'center'}
+# Pretty plots
+(pt_est / cate_dist) +
+  plot_annotation(
+  title = 'Point estimate vs CATE distribution',
+  theme = theme(plot.title = element_text(size = 24, face = "bold", hjust = 0.5))
+)
+```
+
+# Treatment Effects by Poverty Index
+
+```{r, message = F, warning = F, echo = F, fig.width = 13, fig.height = 16, fig.align = 'center'}
+# Loess plot
+smooth <- ggplot() +
+  geom_smooth(data = make_plot_data(cate_labor), aes(x = pi, y = CATE, color = outcome)) +
+  geom_smooth(data = make_plot_data(cate_spending), aes(x = pi, y = CATE, color = outcome)) +
+  geom_smooth(data = make_plot_data(cate_hardship), aes(x = pi, y = CATE, color = outcome)) +
+  geom_smooth(data = make_plot_data(cate_infrastructure), aes(x = pi, y = CATE, color = outcome)) +
+  geom_smooth(data = make_plot_data(cate_education), aes(x = pi, y = CATE, color = outcome)) +
+  geom_smooth(data = make_plot_data(cate_agriculture), aes(x = pi, y = CATE, color = outcome)) +
+  geom_smooth(data = make_plot_data(cate_fishing), aes(x = pi, y = CATE, color = outcome)) +
+  geom_smooth(data = make_plot_data(cate_housing), aes(x = pi, y = CATE, color = outcome)) +
+  ylim(-1, 1) +
+  guides(alpha = "none") +
+  labs(x = "", title = "LOESS") +
+  theme_minimal() +
+  theme(axis.title.y = element_text(size = 20))
+
+# Linear plot
+cate_tot <- cate_agriculture |> 
+  cbind(
+    cate_num_teachers = cate_education$cate_num_teachers,
+    cate_num_schools = cate_education$cate_num_schools,
+    cate_enrollment = cate_education$cate_enrollment,
+    cate_qty_fish_sold = cate_fishing$qty_fish_sold,
+    cate_qty_aquaculture_sold = cate_fishing$qty_aquaculture_sold,
+    cate_price_fish_sold = cate_fishing$price_fish_sold,
+    cate_price_aquaculture_sold = cate_fishing$price_aquaculture_sold,
+    cate_assistance = cate_hardship$cate_assistance,
+    cate_elec = cate_housing$cate_elec,
+    cate_floor_area = cate_housing$cate_floor_area,
+    cate_dist_pub_services = cate_infrastructure$cate_dist_pub_services,
+    cate_travel_time = cate_infrastructure$cate_travel_time,
+    cate_travel_cost = cate_infrastructure$cate_travel_cost,
+    cate_household_spending = cate_spending$cate_household_spending
+  )
+
+linear <- cate_tot |> 
+  make_plot_data() |> 
+  ggplot() +
+  geom_smooth(method = "lm", aes(x = pi, y = CATE, color = outcome)) +
+  ylim(-1, 1) +
+  guides(alpha = "none") +
+  labs(title = "Linear") +
+  theme_minimal() +
+  theme(axis.title.x = element_text(size = 20)) +
+  theme(axis.title.y = element_text(size = 20))
+
+# Single linear regression over all outcomes
+total <- cate_tot |> 
+  make_plot_data() |> 
+  ggplot() +
+  geom_smooth(method = "lm", aes(x = pi, y = CATE)) +
+  ylim(-1, 1) +
+  guides(alpha = "none") +
+  labs(x = "Poverty index", title = "Linear over all outcomes") +
+  theme_minimal() +
+  theme(axis.title.x = element_text(size = 20)) +
+  theme(axis.title.y = element_text(size = 20))
+
+# Create the patchwork quilt
+(smooth / linear / total) +
+  plot_annotation(
+  title = 'Local conditional average treatment effects across poverty indices',
+  theme = theme(plot.title = element_text(size = 24, face = "bold", hjust = 0.5))
+) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+# Variable Importance
+
+* Another way to think about treatment effect heterogeneity is through variable importance, which measures the importance of a given variable in predicting CATEs
+
+* Derived from frequency at which variable is used to split nodes, weighted by the extent to which those splits reduce variance in treatment effect estimates
+
+* While absolute variable importance scores are difficult to interpret, they provide a sense of the degree to which covariates matter for prediction relative to the rest. In the context of my analysis, this allows me to ask not only if poverty matters for aid outcomes, but how much it matters relative to other demographic characteristics which might reasonably shape treatment effects
+
+```{r, warning = F, message = F, output = F, echo = F}
+imp |>
+  mutate(across(-1, ~ as.numeric(.))) |> 
+  select(-non_complier) |> 
+  gt() |>
+  tab_header(title = "Variable importance across outcomes") |>
+  fmt_number(decimals = 4)
+```
+
+# References
+
+“Philippines Compact - KALAHI-CIDSS Community Development Grants: Baseline Data Set.” Washington, DC: Millennium Challenge Corporation, October 2018.
+
+Wager, Stefan, and Susan Athey. "Estimation and inference of heterogeneous treatment effects using
+random forests." Journal of the American Statistical Association 113, no. 523 (2018): 1228-1242.
