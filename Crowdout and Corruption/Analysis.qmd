@@ -377,7 +377,7 @@ dat <- election_returns |>
     .before = treat)
 ```
 
-```{r}
+```{r, eval = F, include = F}
 # PH local gov interactive data set
 
 localgov <- read_xlsx("Data/fiscal_data_revised_for upload.xlsx") |> 
@@ -595,10 +595,7 @@ budget_items <- process_quarterly("Data/Quarterly Spending/SRE-QTR-2013.xlsx", s
 \clearpage
 
 ```{r, echo = FALSE, message = FALSE, warning = FALSE}
-historic_dat <- process_yearly("Data/Yearly Spending/By-LGU-SRE-2004.xlsx") |>
-  bind_rows(process_yearly("Data/Yearly Spending/By-LGU-SRE-2005.xlsx")) |>
-  bind_rows(process_yearly("Data/Yearly Spending/By-LGU-SRE-2006.xlsx")) |>
-  bind_rows(process_yearly("Data/Yearly Spending/By-LGU-SRE-2007.xlsx")) |> 
+historic_dat <- process_yearly("Data/Yearly Spending/By-LGU-SRE-2007.xlsx") |>
   bind_rows(process_yearly("Data/Yearly Spending/By-LGU-SRE-2008.xlsx")) |>
   bind_rows(process_yearly("Data/Yearly Spending/By-LGU-SRE-2009.xlsx")) |>
   bind_rows(process_yearly("Data/Yearly Spending/By-LGU-SRE-2010.xlsx")) |>
@@ -607,12 +604,8 @@ historic_dat <- process_yearly("Data/Yearly Spending/By-LGU-SRE-2004.xlsx") |>
   bind_rows(process_yearly("Data/Yearly Spending/By-LGU-SRE-2013.xlsx")) |>
   bind_rows(process_yearly("Data/Yearly Spending/By-LGU-SRE-2014.xlsx")) |> 
   bind_rows(process_yearly("Data/Yearly Spending/By-LGU-SRE-2015.xlsx")) |> 
-  bind_rows(process_yearly("Data/Yearly Spending/By-LGU-SRE-2016.xlsx"))
-  # bind_rows(process_yearly("Data/Yearly Spending/By-LGU-SRE-2017.xlsx")) |> 
-  # bind_rows(process_yearly("Data/Yearly Spending/By-LGU-SRE-2018.xlsx")) |> 
-  # bind_rows(process_yearly("Data/Yearly Spending/By-LGU-SRE-2019.xlsx")) |>
-  # bind_rows(process_yearly("Data/Yearly Spending/By-LGU-SRE-2020.xlsx")) |> 
-  # bind_rows(process_yearly("Data/Yearly Spending/By-LGU-SRE-2021.xlsx"))
+  bind_rows(process_yearly("Data/Yearly Spending/By-LGU-SRE-2016.xlsx")) |> 
+  bind_rows(process_yearly("Data/Yearly Spending/By-LGU-SRE-2017.xlsx"))
 
 historic_dat <-
   read_csv("Data/KALAHI/PHL-KC Matching Data for Sample/matching data for sample.csv") |> 
@@ -629,62 +622,9 @@ historic_dat |>
   mutate(
     treat = ifelse(treat == 1, "treat", "control"),
     year_num = as.numeric(year),
-    spending = log(kalahi_spending)
-  ) |> 
-  ggplot(aes(x = year_num, y = I(kalahi_spending / pop07nso), color = treat, fill = treat)) +
-  # Confidence interval ribbon
-  stat_summary(
-    fun.data = mean_se, 
-    geom = "ribbon", 
-    alpha = 0.2, 
-    color = NA
-  ) +
-  # Mean trend lines
-  stat_summary(
-    fun = mean, 
-    geom = "line", 
-    size = 1.2
-  ) +
-  # Vertical line at impact start
-  geom_vline(
-    xintercept = 2010, 
-    linetype = "dashed", 
-    color = "gray40", 
-    size = 0.8
-  ) +
-  # Annotation for vertical line
-  annotate(
-    "text", x = 2010, y = 225, label = "Kalahi begins", 
-    vjust = -0.5, angle = 90, size = 3.5, color = "gray40"
-  ) +
-  annotate(
-    "text", x = 2016, y = 225, label = "Funding ends", 
-    vjust = -0.5, angle = 90, size = 3.5, color = "gray40"
-  ) +
-  labs(
-    x = "", 
-    y = "Public service spending", 
-    title = "Figure 1: Balance on pretreatment spending",
-    color = NULL,
-    fill = NULL
-  ) +
-  theme_minimal() +
-  theme(legend.position = "bottom")
-
-historic_dat |> 
-  mutate(
-    treat = ifelse(treat == 1, "treat", "control"),
-    year_num = as.numeric(year),
     spending = log(total_spending)
   ) |> 
   ggplot(aes(x = year_num, y = I(total_spending / pop07nso), color = treat, fill = treat)) +
-  # Confidence interval ribbon
-  stat_summary(
-    fun.data = mean_se, 
-    geom = "ribbon", 
-    alpha = 0.2, 
-    color = NA
-  ) +
   # Mean trend lines
   stat_summary(
     fun = mean, 
@@ -693,29 +633,26 @@ historic_dat |>
   ) +
   # Vertical line at impact start
   geom_vline(
-    xintercept = 2010, 
+    xintercept = 2011, 
     linetype = "dashed", 
     color = "gray40", 
     size = 0.8
   ) +
   # Annotation for vertical line
   annotate(
-    "text", x = 2010, y = 1650, label = "Kalahi begins", 
-    vjust = -0.5, angle = 90, size = 3.5, color = "gray40"
+    "text", x = 2011, y = 4000, label = "Intervention begins", 
+    vjust = -0.5, angle = 90, size = 2.5, color = "gray40"
   ) +
-  annotate(
-    "text", x = 2016, y = 1650, label = "Funding ends", 
-    vjust = -0.5, angle = 90, size = 3.5, color = "gray40"
-  ) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
   labs(
     x = "", 
     y = "Public service spending", 
-    title = "Figure 1: Balance on pretreatment spending",
+    title = "Figure 1: Yearly per capita spending for treated vs control municipalities",
     color = NULL,
     fill = NULL
   ) +
   theme_minimal() +
-  theme(legend.position = "bottom")
+  theme(legend.position = "bottom", panel.grid.minor.x = element_blank())
 ```
 
 \clearpage
